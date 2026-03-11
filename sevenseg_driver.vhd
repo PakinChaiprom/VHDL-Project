@@ -13,7 +13,8 @@ entity sevenseg_driver is
         cursor_pos : in  STD_LOGIC_VECTOR(1 downto 0); -- ตำแหน่งไฟกระพริบ
         msg_sel    : in  STD_LOGIC_VECTOR(3 downto 0); -- โหมดหน้าจอ (สั่งจาก เจโน่/FSM)
         seg        : out STD_LOGIC_VECTOR(6 downto 0); -- สายคุมไฟ 7 ขีด (A-G)
-        an         : out STD_LOGIC_VECTOR(3 downto 0)  -- สายเลือกเปิดจอทีละ 1 หลัก
+        index_digit : in STD_LOGIC_VECTOR(9 downto 0);  -- รับ state_index จาก main
+        an          : out STD_LOGIC_VECTOR(7 downto 0)  -- เปลี่ยนจาก 4 บิต เป็น 8 บิต
     );
 end sevenseg_driver;
 
@@ -21,7 +22,7 @@ architecture Behavioral of sevenseg_driver is
     -- ตัวนับความเร็วสแกนจอ (หารให้เหลือความเร็วระดับที่ตามองไม่ทัน)
     constant MUX_MAX : integer := CLK_FREQ / 4000; 
     signal mux_cnt : integer range 0 to MUX_MAX := 0;
-    signal scan_idx : integer range 0 to 3 := 0;       -- วนค่า 0,1,2,3 เพื่อสแกน 4 หลัก
+    signal scan_idx : integer range 0 to 7 := 0;       -- วนค่า 0,1,2,3 เพื่อสแกน 4 หลัก
     
     -- ตัวนับทำไฟกระพริบ (หารให้ช้าลงเหลือวิละ 4 ครั้ง)
     constant BLINK_MAX : integer := CLK_FREQ / 4; 
@@ -43,7 +44,7 @@ begin
                 mux_cnt <= mux_cnt + 1;
             else
                 mux_cnt <= 0;
-                if scan_idx < 3 then scan_idx <= scan_idx + 1; -- สลับหลักถัดไป
+                if scan_idx < 7 then scan_idx <= scan_idx + 1; -- สลับหลักถัดไป
                 else scan_idx <= 0; end if;
             end if;
             
@@ -58,26 +59,27 @@ begin
     end process;
 
     -- โพรเซสที่ 2: เลือกว่าจะโชว์ตัวเลขปกติ หรือข้อความ
-    process(scan_idx, msg_sel, digit_0, digit_1, digit_2, cursor_pos, blink_state)
+    process(scan_idx, msg_sel, digit_0, digit_1, digit_2, cursor_pos, blink_state, index_digit)
     begin
         hide_digit <= '0';       -- เริ่มต้นให้ไฟติดปกติ
-        an <= "1111";            -- ปิดจอทุกหลัก (Active Low = 1 คือปิด)
+        an <= (others => '1');            -- ปิดจอทุกหลัก (Active Low = 1 คือปิด)
         char_code <= 24;         -- รหัสเผื่อไว้ (ไฟดับ)
         
         if msg_sel = "0000" then -- ถ้า FSM สั่งให้เป็นโหมดป้อนตัวเลข
             case scan_idx is
                 when 0 => -- เปิดหลักหน่วย (ขวาสุด)
-                    char_code <= to_integer(unsigned(digit_0)); an <= "1110"; -- ดึงค่าหลักหน่วยมาโชว์
+                    char_code <= to_integer(unsigned(digit_0)); an <= "11111110"; -- ดึงค่าหลักหน่วยมาโชว์
                     if cursor_pos = "00" and blink_state = '1' then hide_digit <= '1'; end if; -- ถ้าเคอร์เซอร์อยู่ตรงนี้ ให้กระพริบ
                 when 1 => -- เปิดหลักสิบ
-                    char_code <= to_integer(unsigned(digit_1)); an <= "1101";
+                    char_code <= to_integer(unsigned(digit_1)); an <= "11111101";
                     if cursor_pos = "01" and blink_state = '1' then hide_digit <= '1'; end if;
                 when 2 => -- เปิดหลักร้อย
-                    char_code <= to_integer(unsigned(digit_2)); an <= "1011";
+                    char_code <= to_integer(unsigned(digit_2)); an <= "11111011";
                     if cursor_pos = "10" and blink_state = '1' then hide_digit <= '1'; end if;
                 when 3 => -- หลักพัน (ไม่ได้ใช้)
-                    char_code <= 24; an <= "0111"; 
+                    char_code <= 24; an <= "11110111"; 
                     hide_digit <= '1'; -- สั่งปิดหลักนี้ไปเลย
+                when 4 | 5 | 6 | 7 => hide_digit <= '1'; an <= (others => '1');
                 when others => null;
             end case;
         else -- ถ้า FSM สั่งเป็นโหมดข้อความพิเศษ
@@ -85,37 +87,69 @@ begin
             an(scan_idx) <= '0'; -- เปิดจอตามจังหวะสแกนปกติ
             case msg_sel is
                 when "0001" =>   -- โหมดโชว์คำว่า READY (r E A d)
+                if scan_idx >= 4 then
+                    hide_digit <= '1';
+                else
                     if scan_idx=3 then char_code <= 16;      -- r
                     elsif scan_idx=2 then char_code <= 14;   -- E
                     elsif scan_idx=1 then char_code <= 10;   -- A
-                    else char_code <= 13; end if;            -- d
+                    else char_code <= 13; end if;  
+                end if;          -- d
                 when "0010" =>   -- โหมด ERROR (E r r)
+                if scan_idx >= 4 then
+                    hide_digit <= '1';
+                else
                     if scan_idx=3 then char_code <= 14;      -- E
                     elsif scan_idx=2 or scan_idx=1 then char_code <= 16; -- r
                     else hide_digit <= '1'; end if;
+                 end if;
                 -- (ส่วนข้อความอื่นๆ ใช้หลักการเดียวกัน ยัดรหัสลงไปตามหลักที่กำลังสแกน)
                 when "0011" =>   -- S ตามด้วยเลข (เช่น S 1)
+                if scan_idx >= 4 then
+                    hide_digit <= '1';
+                else
                     if scan_idx=2 then char_code <= 5;       -- ตัว S (ใช้หน้าตาเดียวกับเลข 5)
                     elsif scan_idx=0 then char_code <= to_integer(unsigned(digit_0));
                     else hide_digit <= '1'; end if;
+                end if;
                 when "0100" =>   -- C ตามด้วยเลข (เช่น C 1)
-                    if scan_idx=2 then char_code <= 12;      -- ตัว C
-                    elsif scan_idx=0 then char_code <= to_integer(unsigned(digit_0));
-                    else hide_digit <= '1'; end if;
-                when "0101" =>   -- โชว์คำว่า tOP (ผู้ชนะ)
+                if scan_idx >= 4 then
+                    hide_digit <= '1';
+                else
                     if scan_idx=2 then char_code <= 18;      -- t
                     elsif scan_idx=1 then char_code <= 19;   -- o
                     elsif scan_idx=0 then char_code <= 20;   -- P
                     else hide_digit <= '1'; end if;
+                end if;
                 when "0110" =>   -- โชว์คำว่า tIE (เสมอ)
+                if scan_idx >= 4 then
+                    hide_digit <= '1';
+                else
                     if scan_idx=2 then char_code <= 18;      -- t
                     elsif scan_idx=1 then char_code <= 1;    -- I (ใช้หน้าตาเดียวกับเลข 1)
                     elsif scan_idx=0 then char_code <= 14;   -- E
                     else hide_digit <= '1'; end if;
+                end if;
                 when "0111" =>   -- โชว์คำว่า no (ไม่มีคนชนะ)
+                if scan_idx >= 4 then
+                    hide_digit <= '1';
+                else
                     if scan_idx=2 then char_code <= 22;      -- n
                     elsif scan_idx=1 then char_code <= 23;   -- o
                     else hide_digit <= '1'; end if;
+                end if;
+                when "1000" =>             
+                    case scan_idx is
+                        when 7 => char_code <= 5;                               -- S
+                        when 6 => char_code <= to_integer(unsigned(index_digit)); -- state_index
+                        when 5 => hide_digit <= '1';
+                        when 4 => hide_digit <= '1';
+                        when 3 => char_code <= to_integer(unsigned(digit_2));   -- ร้อย
+                        when 2 => char_code <= to_integer(unsigned(digit_1));   -- สิบ
+                        when 1 => char_code <= to_integer(unsigned(digit_0));   -- หน่วย
+                        when 0 => hide_digit <= '1';
+                        when others => hide_digit <= '1';
+                    end case;
                 when others => hide_digit <= '1';
             end case;
         end if;
