@@ -6,52 +6,47 @@ entity multiplier_unit is
     Port (
         clk     : in  std_logic;
         rst     : in  std_logic;
-
         start   : in  std_logic;
 
-        a       : in  unsigned(15 downto 0);
-        b       : in  unsigned(15 downto 0);
+        a       : in  unsigned(31 downto 0);
+        b       : in  unsigned(31 downto 0);
 
-        p       : out unsigned(31 downto 0);
-
+        result  : out unsigned(63 downto 0);
         done    : out std_logic
     );
 end multiplier_unit;
 
 architecture skeleton of multiplier_unit is
 
-    -- internal signals
-    signal product_reg : unsigned(31 downto 0);
-    signal busy        : std_logic;
+    signal result_reg : unsigned(63 downto 0) := (others => '0');
+    signal done_reg   : std_logic := '0';
 
 begin
 
-    -- main process (เติม logic ภายหลัง)
-    process(clk, rst)
-    begin
-        if rst = '1' then
-            product_reg <= (others => '0');
-            busy <= '0';
-            done <= '0';
+process(clk, rst)
+begin
 
-        elsif rising_edge(clk) then
+    if rst='1' then
 
-            -- start multiplication
-            if start = '1' then
-                busy <= '1';
-                done <= '0';
-            end if;
+        result_reg <= (others=>'0');
+        done_reg   <= '0';
 
-            -- TODO:
-            -- ใส่ algorithm การคูณที่เลือกในภายหลัง
+    elsif rising_edge(clk) then
 
-            -- เมื่อคำนวณเสร็จ
-            -- busy <= '0';
-            -- done <= '1';
+        done_reg <= '0';
+
+        if start='1' then
+
+            result_reg <= resize(a,64) * resize(b,64);
+            done_reg   <= '1';
 
         end if;
-    end process;
 
-    p <= product_reg;
+    end if;
+
+end process;
+
+result <= result_reg;
+done   <= done_reg;
 
 end skeleton;

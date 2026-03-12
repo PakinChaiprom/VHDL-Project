@@ -1,43 +1,125 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
 entity top is
     Port (
-        clk     : in  std_logic;
-        rst     : in  std_logic;
-
-        btn_up      : in std_logic;
-        btn_down    : in std_logic;
-        btn_left    : in std_logic;
-        btn_right   : in std_logic;
-        btn_center  : in std_logic;
+        clk100MHZ     : in  std_logic;
+      
+        btn_u      : in std_logic;
+        btn_d    : in std_logic;
+        btn_l    : in std_logic;
+        btn_r   : in std_logic;
+        btn_c  : in std_logic;
+        
 
         seg     : out std_logic_vector(6 downto 0);
-        an      : out std_logic_vector(3 downto 0)
+        an  : out std_logic_vector(7 downto 0);
+        LED : out std_logic_vector(9 downto 0)
+        
     );
 end top;
 
 architecture structural of top is
 
-    -- FSM signals
-    signal current_state : std_logic_vector(7 downto 0);
+    signal state_out : std_logic_vector(7 downto 0);
+    signal val_top : std_logic_vector(9 downto 0);
+    signal confirmed   : std_logic;
+    signal error : std_logic;
+    signal btn_vec : std_logic_vector(4 downto 0);
+    signal digit0 : std_logic_vector(3 downto 0);
+    signal digit1 : std_logic_vector(3 downto 0);
+    signal digit2 : std_logic_vector(3 downto 0);
+    signal cursor  : std_logic_vector(1 downto 0);
+    signal msg_sel : std_logic_vector(3 downto 0);
+    signal index_digit_top :std_logic_vector(9 downto 0);
+    signal alloc_start_top : std_logic;
+    signal alloc_done_top : std_logic;
+    signal state_count_top : std_logic_vector(9 downto 0);
+    signal ev_total_top : std_logic_vector(9 downto 0);
+    signal pop_data_top : std_logic_vector(9 downto 0);
+    signal pop_index_top : integer range 0 to 49;
+    signal pop_write_top : std_logic;
+    
+begin 
+    btn_vec(0) <= btn_r;
+    btn_vec(1) <= btn_l;
+    btn_vec(2) <= btn_d;
+    btn_vec(3) <= btn_u;
+    btn_vec(4) <= btn_c;
+    
+    main : entity work.main_fsm
+    port map(
+        clk => clk100MHZ,
+        rst => '0',
+        
+        btn_down => btn_d,       
+        btn_center => btn_c,
+        btn_up => btn_u,
+        btn_left => btn_l,
+        btn_right => btn_r,      
+        state_confirmed => confirmed,
+        state_out => state_out,
+        msg_sel => msg_sel,
+        LED => LED,
+        val_in => val_top,
+        index_digit_out => index_digit_top,
+        alloc_start => alloc_start_top,
+        alloc_done => alloc_done_top,
+        state_count_out => state_count_top,
+        ev_total_out => ev_total_top,
+        pop_data_out => pop_data_top,
+        pop_index_out => pop_index_top,
+        pop_write_out => pop_write_top
+    );
 
-    -- Button signals (debounced)
-    signal b_up, b_down, b_left, b_right, b_center : std_logic;
+    digit_in : entity work.digit_input
+    port map(
 
-    -- Digit input
-    signal digit_value : unsigned(9 downto 0);
-    signal digit_valid : std_logic;
+        clk => clk100MHZ,
+        rst => '0',
+        btn_pulse => btn_vec,
+        val_out => val_top,
 
-    -- Display
-    signal display_value : unsigned(15 downto 0);
+        digit_0 => digit0,
+        digit_1 => digit1,
+        digit_2 => digit2,
 
-begin
+        cursor_pos => cursor,
 
-    -- Component instances (ต่อภายหลัง)
-    -- main_fsm
-    -- button_controller
-    -- digit_input
-    -- config_controller
-    -- vote_memory
-    -- admin_controller
-    -- sevenseg_driver
+        confirmed => confirmed,
+        error => error
+    );
+    
+    seven_seg : entity work.sevenseg_driver
+    generic map(CLK_FREQ => 100000000)
+    port map(
+        clk => clk100MHZ,
+        rst => '0',
 
+        digit_0 => digit0,
+        digit_1 => digit1,
+        digit_2 => digit2,
+        index_digit => index_digit_top,
+
+        cursor_pos => cursor,
+
+        msg_sel => msg_sel,
+
+        seg => seg,
+        an => an
+   );
+   
+   ev_allocator : entity work.ev_allocator
+   port map(
+        clk => clk100MHZ,
+        rst => '0',
+        start => alloc_start_top,
+        state_count => unsigned(state_count_top),
+        ev_total => unsigned(ev_total_top),
+        pop_data => unsigned(pop_data_top),
+        pop_index => pop_index_top,
+        pop_write => pop_write_top,
+        done => alloc_done_top
+   );
 end structural;
