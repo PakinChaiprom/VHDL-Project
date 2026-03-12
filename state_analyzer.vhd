@@ -1,231 +1,212 @@
 ----------------------------------------------------------------------------------
--- Testbench: tb_state_analyzer
--- Test Cases:
---   TC1 : C1 wins state       → C1 gets all EV
---   TC2 : C2 wins state       → C2 gets all EV
---   TC3 : Tie + EVEN EV       → split equally
---   TC4 : Tie + ODD EV        → C1 wins national → C1 gets extra 1
---   TC5 : Tie + ODD EV        → C2 wins national → C2 gets extra 1
---   TC6 : Tie + ODD EV        → National tie     → pending +1
---   TC7 : RST mid-run         → all accumulators clear
---   TC8 : Multiple states     → accumulation across states
+-- Module Name: state_analyzer
+-- Project Name: Advanced Electronic Voting System
 --
--- Expected Results:
---   TC1 : ev_c1=10  ev_c2=0   pending=0
---   TC2 : ev_c1=10  ev_c2=8   pending=0
---   TC3 : ev_c1=13  ev_c2=11  pending=0
---   TC4 : ev_c1=18  ev_c2=15  pending=0  (half=4, c1 gets +5)
---   TC5 : ev_c1=21  ev_c2=21  pending=0  (half=3, c2 gets +4)
---   TC6 : ev_c1=24  ev_c2=24  pending=1
---   TC7 : ev_c1=0   ev_c2=0   pending=0  (after RST)
---   TC8 : ev_c1=10  ev_c2=0   pending=0  (re-accumulate after RST)
+-- Description:
+-- This module analyzes the Popular Vote of a single state and allocates
+-- Electoral Votes (EV) according to the following rules:
+--
+-- 1) If Candidate 1 has more Popular Votes → C1 gets all EV
+-- 2) If Candidate 2 has more Popular Votes → C2 gets all EV
+--
+-- 3) If Popular Votes are tied:
+--      • If EV is even → split EV equally
+--      • If EV is odd:
+--            - split EV equally first
+--            - remaining 1 EV goes to candidate with higher NATIONAL popular vote
+--            - if national popular vote also tied → store that EV in pending pool
+--
+-- Output values are accumulated at national level.
+--
+-- Pending EV pool is sent to Admin Mode for final decision.
 ----------------------------------------------------------------------------------
 
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
-entity tb_state_analyzer is
-end tb_state_analyzer;
+entity state_analyzer is
+    Port (
 
-architecture behavior of tb_state_analyzer is
+        ----------------------------------------------------------------
+        -- CLOCK & RESET
+        ----------------------------------------------------------------
+        clk             : in std_logic;
+        rst             : in std_logic;
+
+        ----------------------------------------------------------------
+        -- CONTROL SIGNAL
+        ----------------------------------------------------------------
+        start_analysis  : in std_logic;
+
+        ----------------------------------------------------------------
+        -- POPULAR VOTE (CURRENT STATE)
+        ----------------------------------------------------------------
+        pop_vote_c1     : in unsigned(15 downto 0);
+        pop_vote_c2     : in unsigned(15 downto 0);
+
+        ----------------------------------------------------------------
+        -- NATIONAL POPULAR VOTE (ALL STATES COMBINED)
+        ----------------------------------------------------------------
+        national_pop_c1 : in unsigned(31 downto 0);
+        national_pop_c2 : in unsigned(31 downto 0);
+
+        ----------------------------------------------------------------
+        -- ELECTORAL VOTES OF CURRENT STATE
+        ----------------------------------------------------------------
+        state_ev_value  : in unsigned(7 downto 0);
+
+        ----------------------------------------------------------------
+        -- OUTPUT: TOTAL ELECTORAL VOTES
+        ----------------------------------------------------------------
+        total_ev_c1     : out unsigned(15 downto 0);
+        total_ev_c2     : out unsigned(15 downto 0);
+
+        ----------------------------------------------------------------
+        -- OUTPUT: PENDING EV POOL
+        ----------------------------------------------------------------
+        pending_ev_pool : out unsigned(7 downto 0);
+
+        ----------------------------------------------------------------
+        -- OUTPUT: DONE FLAG
+        ----------------------------------------------------------------
+        done_analysis   : out std_logic
+    );
+end state_analyzer;
+
+architecture behavioral of state_analyzer is
 
     ----------------------------------------------------------------
-    -- DUT SIGNALS
+    -- INTERNAL REGISTERS
     ----------------------------------------------------------------
-    signal clk             : std_logic := '0';
-    signal rst             : std_logic := '0';
-    signal start_analysis  : std_logic := '0';
 
-    signal pop_vote_c1     : unsigned(15 downto 0) := (others => '0');
-    signal pop_vote_c2     : unsigned(15 downto 0) := (others => '0');
-    signal national_pop_c1 : unsigned(31 downto 0) := (others => '0');
-    signal national_pop_c2 : unsigned(31 downto 0) := (others => '0');
-    signal state_ev_value  : unsigned(7 downto 0)  := (others => '0');
+    signal ev_acc_c1 : unsigned(15 downto 0) := (others => '0');
+    signal ev_acc_c2 : unsigned(15 downto 0) := (others => '0');
 
-    signal total_ev_c1     : unsigned(15 downto 0);
-    signal total_ev_c2     : unsigned(15 downto 0);
-    signal pending_ev_pool : unsigned(7 downto 0);
-    signal done_analysis   : std_logic;
+    signal pending_ev : unsigned(7 downto 0) := (others => '0');
 
-    constant CLK_PERIOD : time := 10 ns;
-
-    ----------------------------------------------------------------
-    -- HELPER: wait until done_analysis pulses then goes low
-    ----------------------------------------------------------------
-    -- Usage: call after setting start_analysis='1' for 1 cycle
-    ----------------------------------------------------------------
+    signal processing : std_logic := '0';
 
 begin
 
-    ----------------------------------------------------------------
-    -- DUT INSTANTIATION
-    ----------------------------------------------------------------
-    DUT : entity work.state_analyzer
-        port map (
-            clk             => clk,
-            rst             => rst,
-            start_analysis  => start_analysis,
-            pop_vote_c1     => pop_vote_c1,
-            pop_vote_c2     => pop_vote_c2,
-            national_pop_c1 => national_pop_c1,
-            national_pop_c2 => national_pop_c2,
-            state_ev_value  => state_ev_value,
-            total_ev_c1     => total_ev_c1,
-            total_ev_c2     => total_ev_c2,
-            pending_ev_pool => pending_ev_pool,
-            done_analysis   => done_analysis
-        );
+process(clk)
 
-    ----------------------------------------------------------------
-    -- CLOCK GENERATION : 100 MHz
-    ----------------------------------------------------------------
-    clk_process : process
-    begin
-        clk <= '0'; wait for CLK_PERIOD / 2;
-        clk <= '1'; wait for CLK_PERIOD / 2;
-    end process;
+    variable half_ev : unsigned(7 downto 0);
 
-    ----------------------------------------------------------------
-    -- STIMULUS PROCESS
-    ----------------------------------------------------------------
-    stimulus : process
-    begin
+begin
 
-        ------------------------------------------------------------
-        -- INITIAL RESET
-        ------------------------------------------------------------
-        rst <= '1';
-        wait for 3 * CLK_PERIOD;   -- hold reset 3 cycles
-        rst <= '0';
-        wait for CLK_PERIOD;
+    if rising_edge(clk) then
 
-        ------------------------------------------------------------
-        -- TC1 : C1 WINS STATE
-        -- pop_c1=1200 > pop_c2=800  →  C1 gets all 10 EV
-        -- Expected after TC1: ev_c1=10  ev_c2=0  pending=0
-        ------------------------------------------------------------
-        pop_vote_c1     <= to_unsigned(1200, 16);
-        pop_vote_c2     <= to_unsigned(800,  16);
-        national_pop_c1 <= to_unsigned(5000, 32);
-        national_pop_c2 <= to_unsigned(4500, 32);
-        state_ev_value  <= to_unsigned(10, 8);
+        ----------------------------------------------------------------
+        -- RESET SYSTEM
+        ----------------------------------------------------------------
+        if rst = '1' then
 
-        start_analysis <= '1';
-        wait for CLK_PERIOD;        -- cycle 1: latch inputs, processing='1'
-        start_analysis <= '0';
-        wait for CLK_PERIOD;        -- cycle 2: done_analysis='1'
-        wait for CLK_PERIOD;        -- cycle 3: done clears, observe outputs
-        -- >> Observe: total_ev_c1=10, total_ev_c2=0, pending=0
+            ev_acc_c1 <= (others => '0');
+            ev_acc_c2 <= (others => '0');
+            pending_ev <= (others => '0');
 
-        ------------------------------------------------------------
-        -- TC2 : C2 WINS STATE
-        -- pop_c1=500 < pop_c2=900  →  C2 gets all 8 EV
-        -- Expected after TC2: ev_c1=10  ev_c2=8  pending=0
-        ------------------------------------------------------------
-        pop_vote_c1    <= to_unsigned(500, 16);
-        pop_vote_c2    <= to_unsigned(900, 16);
-        state_ev_value <= to_unsigned(8, 8);
+            processing <= '0';
+            done_analysis <= '0';
 
-        start_analysis <= '1';
-        wait for CLK_PERIOD;
-        start_analysis <= '0';
-        wait for 2 * CLK_PERIOD;
-        -- >> Observe: total_ev_c1=10, total_ev_c2=8, pending=0
+        ----------------------------------------------------------------
+        -- START ANALYSIS
+        ----------------------------------------------------------------
+        elsif start_analysis = '1' and processing = '0' then
 
-        ------------------------------------------------------------
-        -- TC3 : TIE + EVEN EV (6 EV)
-        -- pop_c1=pop_c2=1000  EV=6 (even) → each gets 3
-        -- Expected after TC3: ev_c1=13  ev_c2=11  pending=0
-        ------------------------------------------------------------
-        pop_vote_c1    <= to_unsigned(1000, 16);
-        pop_vote_c2    <= to_unsigned(1000, 16);
-        state_ev_value <= to_unsigned(6, 8);
+            processing <= '1';
+            done_analysis <= '0';
 
-        start_analysis <= '1';
-        wait for CLK_PERIOD;
-        start_analysis <= '0';
-        wait for 2 * CLK_PERIOD;
-        -- >> Observe: total_ev_c1=13, total_ev_c2=11, pending=0
+            ------------------------------------------------------------
+            -- CASE 1 : CANDIDATE 1 WINS STATE
+            ------------------------------------------------------------
+            if pop_vote_c1 > pop_vote_c2 then
 
-        ------------------------------------------------------------
-        -- TC4 : TIE + ODD EV (9 EV)  →  C1 leads nationally
-        -- half = 4, remain 1 → C1 gets 5, C2 gets 4
-        -- Expected after TC4: ev_c1=18  ev_c2=15  pending=0
-        ------------------------------------------------------------
-        pop_vote_c1     <= to_unsigned(1000, 16);
-        pop_vote_c2     <= to_unsigned(1000, 16);
-        national_pop_c1 <= to_unsigned(7000, 32);  -- C1 leads nationally
-        national_pop_c2 <= to_unsigned(6500, 32);
-        state_ev_value  <= to_unsigned(9, 8);
+                ev_acc_c1 <= ev_acc_c1 + state_ev_value;
 
-        start_analysis <= '1';
-        wait for CLK_PERIOD;
-        start_analysis <= '0';
-        wait for 2 * CLK_PERIOD;
-        -- >> Observe: total_ev_c1=18, total_ev_c2=15, pending=0
+            ------------------------------------------------------------
+            -- CASE 2 : CANDIDATE 2 WINS STATE
+            ------------------------------------------------------------
+            elsif pop_vote_c2 > pop_vote_c1 then
 
-        ------------------------------------------------------------
-        -- TC5 : TIE + ODD EV (7 EV)  →  C2 leads nationally
-        -- half = 3, remain 1 → C1 gets 3, C2 gets 4
-        -- Expected after TC5: ev_c1=21  ev_c2=19  pending=0
-        ------------------------------------------------------------
-        pop_vote_c1     <= to_unsigned(1000, 16);
-        pop_vote_c2     <= to_unsigned(1000, 16);
-        national_pop_c1 <= to_unsigned(6000, 32);
-        national_pop_c2 <= to_unsigned(6800, 32);  -- C2 leads nationally
-        state_ev_value  <= to_unsigned(7, 8);
+                ev_acc_c2 <= ev_acc_c2 + state_ev_value;
 
-        start_analysis <= '1';
-        wait for CLK_PERIOD;
-        start_analysis <= '0';
-        wait for 2 * CLK_PERIOD;
-        -- >> Observe: total_ev_c1=21, total_ev_c2=19, pending=0
+            ------------------------------------------------------------
+            -- CASE 3 : POPULAR VOTE TIE
+            ------------------------------------------------------------
+            else
 
-        ------------------------------------------------------------
-        -- TC6 : TIE + ODD EV (5 EV)  →  NATIONAL TIE → pending +1
-        -- half = 2, remain 1 → each gets 2, pending pool +1
-        -- Expected after TC6: ev_c1=23  ev_c2=21  pending=1
-        ------------------------------------------------------------
-        pop_vote_c1     <= to_unsigned(1000, 16);
-        pop_vote_c2     <= to_unsigned(1000, 16);
-        national_pop_c1 <= to_unsigned(6000, 32);  -- national tie
-        national_pop_c2 <= to_unsigned(6000, 32);
-        state_ev_value  <= to_unsigned(5, 8);
+                half_ev := state_ev_value / 2;
 
-        start_analysis <= '1';
-        wait for CLK_PERIOD;
-        start_analysis <= '0';
-        wait for 2 * CLK_PERIOD;
-        -- >> Observe: total_ev_c1=23, total_ev_c2=21, pending=1
+                --------------------------------------------------------
+                -- EVEN EV CASE
+                --------------------------------------------------------
+                if (state_ev_value mod 2 = 0) then
 
-        ------------------------------------------------------------
-        -- TC7 : RESET MID-RUN
-        -- After reset all accumulators must clear to 0
-        -- Expected after TC7: ev_c1=0  ev_c2=0  pending=0
-        ------------------------------------------------------------
-        rst <= '1';
-        wait for 2 * CLK_PERIOD;
-        rst <= '0';
-        wait for CLK_PERIOD;
-        -- >> Observe: total_ev_c1=0, total_ev_c2=0, pending=0
+                    ev_acc_c1 <= ev_acc_c1 + half_ev;
+                    ev_acc_c2 <= ev_acc_c2 + half_ev;
 
-        ------------------------------------------------------------
-        -- TC8 : ACCUMULATE AFTER RESET  (verify accumulators restart)
-        -- C1 wins 10 EV again
-        -- Expected after TC8: ev_c1=10  ev_c2=0  pending=0
-        ------------------------------------------------------------
-        pop_vote_c1    <= to_unsigned(1200, 16);
-        pop_vote_c2    <= to_unsigned(800,  16);
-        state_ev_value <= to_unsigned(10, 8);
+                --------------------------------------------------------
+                -- ODD EV CASE
+                --------------------------------------------------------
+                else
 
-        start_analysis <= '1';
-        wait for CLK_PERIOD;
-        start_analysis <= '0';
-        wait for 2 * CLK_PERIOD;
-        -- >> Observe: total_ev_c1=10, total_ev_c2=0, pending=0
+                    
 
-        wait; -- end simulation
-    end process;
+                    ----------------------------------------------------
+                    -- CHECK NATIONAL POPULAR VOTE
+                    ----------------------------------------------------
+                    if national_pop_c1 > national_pop_c2 then
 
-end behavior;
+                        ev_acc_c1 <= ev_acc_c1 + half_ev + 1; -- half + remain 1
+                        ev_acc_c2 <= ev_acc_c2 + half_ev;
+
+                    elsif national_pop_c2 > national_pop_c1 then
+
+                        ev_acc_c2 <= ev_acc_c2 + half_ev + 1;
+                        ev_acc_c1 <= ev_acc_c1 + half_ev; -- half + remain 1
+
+                    ----------------------------------------------------
+                    -- NATIONAL POP TIE → STORE IN PENDING POOL
+                    ----------------------------------------------------
+                    else
+
+                        pending_ev <= pending_ev + 1;
+
+                    end if;
+
+                end if;
+
+            end if;
+
+        ----------------------------------------------------------------
+        -- FINISH SIGNAL
+        ----------------------------------------------------------------
+        elsif start_analysis = '1' and processing = '1' then
+
+            done_analysis <= '1';
+
+        ----------------------------------------------------------------
+        -- IDLE STATE
+        ----------------------------------------------------------------
+        elsif start_analysis = '0' then
+
+            processing <= '0';
+            done_analysis <= '0';
+
+        end if;
+
+    end if;
+
+end process;
+
+----------------------------------------------------------------
+-- OUTPUT ASSIGNMENT
+----------------------------------------------------------------
+
+total_ev_c1 <= ev_acc_c1;
+total_ev_c2 <= ev_acc_c2;
+
+pending_ev_pool <= pending_ev;
+
+end behavioral;
