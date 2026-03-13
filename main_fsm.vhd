@@ -25,10 +25,10 @@ entity main_fsm is
         LED : out std_logic_vector(9 downto 0);
         
         pop_data_out : out std_logic_vector(9 downto 0);
-        pop_index_out : out integer range 0 to 49;
+        pop_index_out : out integer range 0 to 998;
         pop_write_out : out std_logic;
         
-      
+        alloc_pop_total_in : in unsigned(31 downto 0);
         alloc_start : out std_logic;
         alloc_done  : in  std_logic
         
@@ -38,7 +38,7 @@ end main_fsm;
 architecture behavioral of main_fsm is
 
     type state_type is (
-        C1, C2, C3, C4, C5, C6,
+        C1, C2, C3, C4, C5, 
         U0, U1, U2, U3, U4, U5, U6,
         A1, A2, A3, A4, A5, A6
     );
@@ -47,6 +47,8 @@ architecture behavioral of main_fsm is
     signal val_int : integer;
     signal state_index     : integer range 0 to 999 := 0;
     signal state_count_reg : integer range 0 to 999 := 0;
+    signal alloc_start_reg  : std_logic := '0';
+    signal alloc_started    : std_logic := '0';
     
 
 begin
@@ -62,15 +64,18 @@ begin
         end if;
     end process;
     
+    --registered process
     process(clk, rst)
     begin
         if rst = '1' then
             state_index     <= 0;
             state_count_reg <= 0;
         elsif rising_edge(clk) then
+            --C1
             if current_state = C1 and state_confirmed = '1' and val_int >= 2 and val_int <= 999 then
                 state_count_reg <= val_int;
             end if;
+            --C3
             if current_state = C3 and state_confirmed = '1' and val_int > 0 then
                 if state_index + 1 < state_count_reg then
                     state_index <= state_index + 1;
@@ -78,8 +83,45 @@ begin
                     state_index <= 0;
                 end if;
             end if;
+            --C5
+            if current_state = C5 then
+                if btn_right = '1' then
+                    if state_index + 1 < state_count_reg then
+                        state_index <= state_index + 1;
+                    end if;
+                elsif btn_left = '1' then
+                    if state_index > 0 then
+                        state_index <= state_index - 1;
+                    end if;
+                end if;
+            end if;        
+            if current_state = C5 and btn_center = '1' then
+                state_index <= 0;
+            end if;
+            
         end if;
     end process;
+    
+    process(clk, rst)
+    begin
+        if rst = '1' then
+            alloc_start_reg <= '0';
+            alloc_started   <= '0';
+        elsif rising_edge(clk) then
+            if current_state = C4 then
+                if alloc_started = '0' then
+                    alloc_start_reg <= '1';  
+                    alloc_started   <= '1';  
+                else
+                    alloc_start_reg <= '0';  
+                end if;
+            else
+                alloc_start_reg <= '0';
+                alloc_started   <= '0';  
+            end if;
+        end if;
+    end process;
+    alloc_start <= alloc_start_reg;
     
     -- stage table
     process(current_state)
@@ -95,9 +137,7 @@ begin
                 state_out <= "00000100";
             when C5 =>
                 state_out <= "00000101";
-            when C6 =>
-                state_out <= "00000110";
-                
+      
             when U0 =>
                 state_out <= "00010001";
             when U1 =>
@@ -142,7 +182,9 @@ begin
             val_in,
             val_int,
             state_index,
-            state_count_reg         
+            state_count_reg,
+            alloc_pop_total_in,
+            alloc_done                 
             )
     begin
     
@@ -153,8 +195,7 @@ begin
     ev_total_out    <= (others => '0');
     pop_data_out    <= (others => '0');
     pop_index_out   <= 0;
-    pop_write_out   <= '0';
-    alloc_start     <= '0';    
+    pop_write_out   <= '0';  
     
         case current_state is                          
             when C1 => --set state count 
@@ -165,7 +206,7 @@ begin
                         next_state <= C2;
                     else
                         msg_sel <= "0010";
-                        next_state <= C1;
+                        next_state <= C1;   
                     end if;
                 end if;   
           
@@ -177,11 +218,11 @@ begin
                         next_state <= C3;
                     else
                         msg_sel <= "0010";
-                        next_state <= C2;
+                        next_state <= C2;                    
                     end if;
                 end if;
             
-            when C3 =>           --set each state population
+            when C3 => --set each state population
                 msg_sel <= "1000";
                 index_digit_out <= std_logic_vector(to_unsigned(state_index, 10));            
                 if  state_confirmed = '1' then
@@ -196,35 +237,36 @@ begin
                         end if;
                     else
                         msg_sel <= "0010";
+                        next_state <= C3;
                     end if;
                 end if;
             
-            when C4 =>           --calculate total population
-                if btn_center = '1' then
+            when C4 =>  --calculate total population & EV per state               
+                if alloc_pop_total_in = 0 then
+                    msg_sel <= "0010";
+                    next_state <= C4;
+                elsif alloc_done = '1' then
+                    msg_sel <= "0000";
                     next_state <= C5;
-                else
+                else    
+                    msg_sel <= "1001";
                     next_state <= C4;
                 end if;
-            
-            when C5 =>           --calculate EV per state
-                if btn_center = '1' then 
-                    next_state <= C6;
-                else 
+                                       
+            when C5 =>  -- show EV result
+                msg_sel         <= "1000";  
+                index_digit_out <= std_logic_vector(to_unsigned(state_index, 10));
+                if btn_center = '1' then
+                    next_state <= U0;
+                else
                     next_state <= C5;
-                end if;
-            
-            when C6 =>           --show EV result
-                if  btn_center = '1' then
-                    next_state <= U0;               
-                else 
-                    next_state <= C6;
                 end if; 
                 
-            when U0 =>           --Idle(ready)
+            when U0 =>   --Idle(ready)
                 if btn_center = '1' then 
                     next_state <= U1;
                 else 
-                    next_state <= U2;
+                    next_state <= U0;
                 end if;
                 
             when U1 =>           --select state
@@ -255,15 +297,13 @@ begin
                     next_state <= U4;
                 end if; 
                 
-            when U5 =>           --register vote
+           when U5 =>  -- register vote
                 if btn_center = '1' then  
                     next_state <= U6;
-                elsif btn_center = '1' then  
-                    next_state <= U0;
                 else 
                     next_state <= U5;
                 end if;
-                
+                        
              when U6 =>           --state analysis           
                 if btn_center = '1' then
                     next_state <= A1;
@@ -339,7 +379,7 @@ begin
             when C3 => 
                 LED(2) <= '1';
                 LED(7) <= '1';             
-            when C6 => 
+            when C5 => 
                 LED(3) <= '1';
                 LED(7) <= '1';
             
