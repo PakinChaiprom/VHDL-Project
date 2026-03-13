@@ -31,7 +31,17 @@ architecture Behavioral of sevenseg_driver is
 
     signal char_code : integer range 0 to 31 := 0;     -- รหัสตัวอักษรที่จะส่งไปแปลงเป็นแสงไฟ
     signal hide_digit : std_logic := '0';              -- คำสั่งปิดไฟชั่วคราว (เช่น ดับไฟกระพริบ)
+    signal idx_digit0 : integer range 0 to 9 := 0;
+    signal idx_digit1 : integer range 0 to 9 := 0;
+    signal idx_digit2 : integer range 0 to 9 := 0;
 begin
+
+    process(index_digit)
+    begin
+        idx_digit0 <= to_integer(unsigned(index_digit)) mod 10;
+        idx_digit1 <= (to_integer(unsigned(index_digit)) / 10) mod 10;
+        idx_digit2 <= (to_integer(unsigned(index_digit)) / 100) mod 10;
+    end process;
     -- โพรเซสที่ 1: นาฬิกานับจังหวะ สแกนจอ และ ไฟกระพริบ
     process(clk, rst)
     begin
@@ -59,7 +69,7 @@ begin
     end process;
 
     -- โพรเซสที่ 2: เลือกว่าจะโชว์ตัวเลขปกติ หรือข้อความ
-    process(scan_idx, msg_sel, digit_0, digit_1, digit_2, cursor_pos, blink_state, index_digit)
+    process(scan_idx, msg_sel, digit_0, digit_1, digit_2, cursor_pos, blink_state, index_digit, idx_digit0, idx_digit1, idx_digit2)
     begin
         hide_digit <= '0';       -- เริ่มต้นให้ไฟติดปกติ
         an <= (others => '1');            -- ปิดจอทุกหลัก (Active Low = 1 คือปิด)
@@ -131,25 +141,46 @@ begin
                     else hide_digit <= '1'; end if;
                 end if;
                 when "0111" =>   -- โชว์คำว่า no (ไม่มีคนชนะ)
-                if scan_idx >= 4 then
-                    hide_digit <= '1';
-                else
-                    if scan_idx=2 then char_code <= 22;      -- n
-                    elsif scan_idx=1 then char_code <= 23;   -- o
-                    else hide_digit <= '1'; end if;
-                end if;
+                    if scan_idx >= 4 then
+                        hide_digit <= '1';
+                    else
+                        if scan_idx=2 then char_code <= 22;      -- n
+                        elsif scan_idx=1 then char_code <= 23;   -- o
+                        else hide_digit <= '1'; end if;
+                    end if;
+                
+                when "1001" =>   -- โหมดโชว์คำว่า Load
+                    if scan_idx >= 4 then
+                        hide_digit <= '1';
+                    else
+                        if scan_idx = 3 then char_code <= 21;      -- L
+                        elsif scan_idx = 2 then char_code <= 23;   -- o
+                        elsif scan_idx = 1 then char_code <= 10;   -- A (ใช้แทน a)
+                        else char_code <= 13; end if;              -- d
+                    end if;
+    
                 when "1000" =>             
-                    case scan_idx is
-                        when 7 => char_code <= 5;                               -- S
-                        when 6 => char_code <= to_integer(unsigned(index_digit)); -- state_index
-                        when 5 => hide_digit <= '1';
-                        when 4 => hide_digit <= '1';
-                        when 3 => char_code <= to_integer(unsigned(digit_2));   -- ร้อย
-                        when 2 => char_code <= to_integer(unsigned(digit_1));   -- สิบ
-                        when 1 => char_code <= to_integer(unsigned(digit_0));   -- หน่วย
-                        when 0 => hide_digit <= '1';
-                        when others => hide_digit <= '1';
-                    end case;
+                case scan_idx is
+                    when 7 => char_code <= 5;          -- S
+                    when 6 =>                          -- ร้อย index
+                        if idx_digit2 = 0 then 
+                            hide_digit <= '1';
+                        else 
+                            char_code <= idx_digit2;
+                        end if;
+                    when 5 =>                          -- สิบ index
+                        if idx_digit2 = 0 and idx_digit1 = 0 then
+                            hide_digit <= '1';
+                        else 
+                            char_code <= idx_digit1;
+                        end if;
+                    when 4 => char_code <= idx_digit0; -- หน่วย index
+                    when 3 => hide_digit <= '1';       -- ดับ
+                    when 2 => char_code <= to_integer(unsigned(digit_2)); -- ร้อย EV
+                    when 1 => char_code <= to_integer(unsigned(digit_1)); -- สิบ EV
+                    when 0 => char_code <= to_integer(unsigned(digit_0)); -- หน่วย EV
+                    when others => hide_digit <= '1';
+                end case;
                 when others => hide_digit <= '1';
             end case;
         end if;
@@ -184,6 +215,7 @@ begin
                 when 18 => seg <= "0000111"; -- โชว์ตัว t
                 when 19 => seg <= "1000000"; -- โชว์ตัว o (หน้าตาเหมือน 0)
                 when 20 => seg <= "0001100"; -- โชว์ตัว P
+                when 21 => seg <= "1000111"; -- โชว์ตัว L
                 when 22 => seg <= "0101011"; -- โชว์ตัว n
                 when 23 => seg <= "0100011"; -- โชว์ตัว o (ตัวเล็ก)
                 when others => seg <= "1111111"; -- ถ้าไม่อยู่ในเงื่อนไข ให้ดับไฟ
