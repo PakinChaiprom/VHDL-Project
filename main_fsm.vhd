@@ -3,6 +3,9 @@ use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
 entity main_fsm is
+    Generic (
+            CLK_FREQ : integer := 100_000_000
+    );
     Port (
         clk     : in std_logic;
         rst     : in std_logic;
@@ -27,11 +30,20 @@ entity main_fsm is
         pop_data_out : out std_logic_vector(9 downto 0);
         pop_index_out : out integer range 0 to 998;
         pop_write_out : out std_logic;
-        
+        selected_state_out : out std_logic_vector(9 downto 0);
+               
+        pop_result_in : in std_logic_vector(9 downto 0);
         alloc_pop_total_in : in unsigned(31 downto 0);
-        alloc_start : out std_logic;
-        alloc_done  : in  std_logic
-        
+        alloc_start_out : out std_logic;
+        alloc_done_in  : in  std_logic;
+        voter_id_out : out std_logic_vector(12 downto 0);       
+        voted_flag_in  : in  std_logic;   
+        vote_valid_out : out std_logic;
+        selected_candidate_out : out std_logic_vector(1 downto 0);
+        vote_count_in : in unsigned(15 downto 0);
+        start_analysis_out : out std_logic;
+        done_analysis_in   : in  std_logic 
+           
     );
 end main_fsm;
 
@@ -49,10 +61,21 @@ architecture behavioral of main_fsm is
     signal state_count_reg : integer range 0 to 999 := 0;
     signal alloc_start_reg  : std_logic := '0';
     signal alloc_started    : std_logic := '0';
-    
+    signal selected_state : integer range 0 to 999 := 0;
+    signal voter_id_reg : integer range 0 to 999 := 0;
+    signal attempt_count : integer range 0 to 3 := 0;
+    signal lock_count    : integer range 0 to 1100000000 := 0;
+    signal locked        : std_logic := '0'; 
+    signal vote_valid_reg : std_logic;
+    signal selected_candidate : integer range 1 to 2 := 1;
+    signal analysis_started : std_logic := '0';
+    signal analysis_start_reg : std_logic := '0';
 
 begin
     val_int <= to_integer(unsigned(val_in));
+    selected_state_out <= std_logic_vector(to_unsigned(selected_state, 10));
+    voter_id_out       <= std_logic_vector(to_unsigned(voter_id_reg, 13));
+    selected_candidate_out <= std_logic_vector(to_unsigned(selected_candidate, 2));
 
     -- State register
     process(clk, rst)
@@ -70,12 +93,14 @@ begin
         if rst = '1' then
             state_index     <= 0;
             state_count_reg <= 0;
+            selected_state  <= 0;
+            voter_id_reg    <= 0;
         elsif rising_edge(clk) then
-            --C1
+            --C1 register state_count
             if current_state = C1 and state_confirmed = '1' and val_int >= 2 and val_int <= 999 then
                 state_count_reg <= val_int;
             end if;
-            --C3
+            --C3 next state index
             if current_state = C3 and state_confirmed = '1' and val_int > 0 then
                 if state_index + 1 < state_count_reg then
                     state_index <= state_index + 1;
@@ -83,7 +108,7 @@ begin
                     state_index <= 0;
                 end if;
             end if;
-            --C5
+            --C5 Left/Right view EV each state
             if current_state = C5 then
                 if btn_right = '1' then
                     if state_index + 1 < state_count_reg then
@@ -97,11 +122,100 @@ begin
             end if;        
             if current_state = C5 and btn_center = '1' then
                 state_index <= 0;
+            end if;         
+            -- U1 Left/Right view state and confirm selected
+            if current_state = U1 then
+                  if btn_center = '1' then
+                        if state_index < state_count_reg then
+                            selected_state <= state_index;  
+                        end if;
+                        state_index <= 0;  
+                    elsif btn_right = '1' then
+                        if state_index + 1 < state_count_reg then
+                            state_index <= state_index + 1;
+                        end if;
+                    elsif btn_left = '1' then
+                        if state_index > 0 then
+                            state_index <= state_index - 1;
+                        end if;
+                  end if;
             end if;
+              -- U2 register voter id
+            if current_state = U2 and state_confirmed = '1' then           
+                voter_id_reg <= val_int;
+            end if;  
             
+            -- U4: veiw candidate and confirm select
+            if current_state = U4 then
+                if btn_right = '1' then
+                    selected_candidate <= 2;
+                elsif btn_left = '1' then
+                    selected_candidate <= 1;
+                end if;
+            end if;
+                        
         end if;
     end process;
     
+    -- U3: attempt and lock
+    process(clk, rst)
+    begin
+        if rst = '1' then
+            attempt_count <= 0;
+            lock_count    <= 0;
+            locked        <= '0';
+        elsif rising_edge(clk) then
+            if current_state = U3 then
+                if locked = '1' then
+                    if lock_count > 0 then
+                        lock_count <= lock_count - 1;
+                    else
+                        locked        <= '0';
+                        attempt_count <= 0;
+                    end if;
+                elsif btn_center = '1' then
+                    if voter_id_reg > 0
+                       and voter_id_reg <= to_integer(unsigned(pop_result_in)) then
+                        attempt_count <= 0;
+                    else
+                        if attempt_count + 1 >= 3 then
+                            locked        <= '1';
+                            lock_count    <= CLK_FREQ * 10;  
+                            attempt_count <= 0;
+                        else
+                            attempt_count <= attempt_count + 1;
+                        end if;
+                    end if;
+                end if;
+            end if;
+            if current_state = U0 then
+                attempt_count <= 0;
+                locked        <= '0';
+                lock_count    <= 0;
+            end if;
+        end if;
+    end process;
+    
+    -- U3 vote_valid 
+    process(clk, rst)
+    begin
+        if rst = '1' then
+            vote_valid_reg <= '0';
+        elsif rising_edge(clk) then
+            vote_valid_reg <= '0';  -- default ดับทุก clock
+            if current_state = U3 
+               and btn_center = '1'
+               and locked = '0'
+               and voter_id_reg > 0
+               and voter_id_reg <= to_integer(unsigned(pop_result_in))
+               and voted_flag_in = '0' then
+                vote_valid_reg <= '1';  -- pulse 1 clock
+            end if;
+        end if;
+    end process;
+    vote_valid_out <= vote_valid_reg;
+    
+    --alloc_start one-shot pulse
     process(clk, rst)
     begin
         if rst = '1' then
@@ -121,52 +235,53 @@ begin
             end if;
         end if;
     end process;
-    alloc_start <= alloc_start_reg;
+    alloc_start_out <= alloc_start_reg;
+    
+    --analysis_start one-shot pulse
+    process(clk, rst)
+    begin
+        if rst = '1' then
+            analysis_start_reg <= '0';
+            analysis_started   <= '0';
+        elsif rising_edge(clk) then
+            if current_state = U6 then
+                if analysis_started = '0' then
+                    analysis_start_reg <= '1';
+                    analysis_started   <= '1';
+                else
+                    analysis_start_reg <= '0';
+                end if;
+            else
+                analysis_start_reg <= '0';
+                analysis_started   <= '0';
+            end if;
+        end if;
+    end process;
+    start_analysis_out <= analysis_start_reg;
     
     -- stage table
     process(current_state)
     begin   
         case current_state is
-            when C1 =>
-                state_out <= "00000001";
-            when C2 =>
-                state_out <= "00000010";
-            when C3 =>
-                state_out <= "00000011";
-            when C4 =>
-                state_out <= "00000100";
-            when C5 =>
-                state_out <= "00000101";
-      
-            when U0 =>
-                state_out <= "00010001";
-            when U1 =>
-                state_out <= "00010001";
-            when U2 =>
-                state_out <= "00010010";
-            when U3 =>
-                state_out <= "00010011";
-            when U4 =>
-                state_out <= "00010100";
-            when U5 =>
-                state_out <= "00010101";
-            when U6 =>
-                state_out <= "00010110";
-              
-            when A1 =>
-                state_out <= "00100001";
-            when A2 =>
-                state_out <= "00100010";
-            when A3 =>
-                state_out <= "00100011";
-            when A4 =>
-                state_out <= "00100100";
-            when A5 =>
-                state_out <= "00100101";
-            when A6 =>
-                state_out <= "00100110";
-            when others =>
-                state_out <= "00000000";  
+            when C1 => state_out <= "00000001";
+            when C2 => state_out <= "00000010";
+            when C3 => state_out <= "00000011";
+            when C4 => state_out <= "00000100";
+            when C5 => state_out <= "00000101";
+            when U0 => state_out <= "00010000";
+            when U1 => state_out <= "00010001";
+            when U2 => state_out <= "00010010";
+            when U3 => state_out <= "00010011";
+            when U4 => state_out <= "00010100";
+            when U5 => state_out <= "00010101";
+            when U6 => state_out <= "00010110";
+            when A1 => state_out <= "00100001";
+            when A2 => state_out <= "00100010";
+            when A3 => state_out <= "00100011";
+            when A4 => state_out <= "00100100";
+            when A5 => state_out <= "00100101";
+            when A6 => state_out <= "00100110";
+            when others => state_out <= "00000000";   
        end case;  
     end process;
 
@@ -184,7 +299,11 @@ begin
             state_index,
             state_count_reg,
             alloc_pop_total_in,
-            alloc_done                 
+            alloc_done_in,
+            pop_result_in,
+            locked,
+            voter_id_reg,
+            voted_flag_in                 
             )
     begin
     
@@ -195,7 +314,7 @@ begin
     ev_total_out    <= (others => '0');
     pop_data_out    <= (others => '0');
     pop_index_out   <= 0;
-    pop_write_out   <= '0';  
+    pop_write_out   <= '0'; 
     
         case current_state is                          
             when C1 => --set state count 
@@ -242,14 +361,15 @@ begin
                 end if;
             
             when C4 =>  --calculate total population & EV per state               
-                if alloc_pop_total_in = 0 then
-                    msg_sel <= "0010";
-                    next_state <= C4;
-                elsif alloc_done = '1' then
-                    msg_sel <= "0000";
-                    next_state <= C5;
-                else    
-                    msg_sel <= "1001";
+                if alloc_done_in = '1' then
+                    if alloc_pop_total_in = 0 then
+                        msg_sel    <= "0010";  
+                        next_state <= C3;    
+                    else
+                        next_state <= C5;
+                    end if;
+                else
+                    msg_sel    <= "1001";  
                     next_state <= C4;
                 end if;
                                        
@@ -262,52 +382,78 @@ begin
                     next_state <= C5;
                 end if; 
                 
-            when U0 =>   --Idle(ready)
+            when U0 =>  --Idle(ready)
+                msg_sel <= "0001";
                 if btn_center = '1' then 
                     next_state <= U1;
-                else 
+                else                  
                     next_state <= U0;
                 end if;
                 
-            when U1 =>           --select state
-                if btn_center = '1' then 
-                    next_state <= U2;
-                else 
+            when U1 =>  -- select state
+                msg_sel         <= "1000";   
+                index_digit_out <= std_logic_vector(to_unsigned(state_index, 10));
+                
+                if btn_center = '1' then
+                    if state_index < state_count_reg then  
+                        next_state <= U2;
+                    else
+                        msg_sel <= "0010";   
+                    end if;
+                else
                     next_state <= U1;
                 end if;
                 
-            when U2 =>           --insert id
-                if btn_center = '1' then 
-                    next_state <= U3;
-                else 
+            when U2 =>  -- insert voter ID
+                msg_sel <= "0000";  
+                if state_confirmed = '1' then
+                    next_state <= U3;   
+                else
                     next_state <= U2;
-                end if; 
+                end if;
                 
-            when U3 =>           --verify id
-                if btn_center = '1' then 
-                    next_state <= U4;
-                else 
+            when U3 =>                
+                if locked = '1' then
+                    msg_sel    <= "0010";
+                    next_state <= U3;
+                elsif btn_center = '1' then
+                    if voter_id_reg = 0
+                       or voter_id_reg > to_integer(unsigned(pop_result_in)) then
+                        msg_sel    <= "0010";
+                        next_state <= U2;   
+                    elsif voted_flag_in = '1' then
+                        msg_sel    <= "0010";
+                        next_state <= U0;   
+                    else
+                        next_state     <= U4;
+                    end if;
+                else
                     next_state <= U3;
                 end if;
                 
-            when U4 =>           --select candidate
-                if btn_center = '1' then 
+            when U4 =>  -- select candidate
+                msg_sel         <= "0100";  -- โชว์ toP (ใช้แทน C)
+                index_digit_out <= std_logic_vector(
+                                   to_unsigned(selected_candidate, 10));       
+                if btn_center = '1' then
                     next_state <= U5;
-                else 
+                else
                     next_state <= U4;
-                end if; 
+                end if;
                 
            when U5 =>  -- register vote
-                if btn_center = '1' then  
+                msg_sel <= "1001";
+                if vote_count_in >= unsigned(pop_result_in) then
                     next_state <= U6;
-                else 
-                    next_state <= U5;
+                else
+                    next_state <= U0;
                 end if;
                         
-             when U6 =>           --state analysis           
-                if btn_center = '1' then
+             when U6 =>  --state analysis           
+                if done_analysis_in = '1' then
                     next_state <= A1;
                 else
+                    msg_sel    <= "1001";  
                     next_state <= U6;
                 end if;
                 
@@ -366,83 +512,27 @@ begin
     end process;
     
     -- LED display
-    process(current_state)
+   process(current_state)
     begin
         LED <= (others => '0');       
         case current_state is   
-            when C1 => 
-                LED(0) <= '1';
-                LED(7) <= '1';
-            when C2 => 
-                LED(1) <= '1';
-                LED(7) <= '1';
-            when C3 => 
-                LED(2) <= '1';
-                LED(7) <= '1';             
-            when C5 => 
-                LED(3) <= '1';
-                LED(7) <= '1';
-            
-            when U0 =>
-                LED(0) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-            when U1 => 
-                LED(1) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-            when U2 =>
-                LED(2) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-            when U3 => 
-                LED(3) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-            when U4 =>
-                LED(4) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-            when U5 =>
-                LED(5) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-            when U6 =>
-                LED(6) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-
-            when A1 => 
-                LED(0) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-                LED(9) <= '1';
-            when A2 =>
-                LED(1) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-                LED(9) <= '1'; 
-            when A3 => 
-                LED(2) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-                LED(9) <= '1';
-            when A4 =>
-                LED(3) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-                LED(9) <= '1';          
-            when A5 => 
-                LED(4) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-                LED(9) <= '1';
-            when A6 => 
-                LED(5) <= '1';
-                LED(7) <= '1';
-                LED(8) <= '1';
-                LED(9) <= '1';                   
-            
+            when C1 => LED(0) <= '1'; LED(7) <= '1';
+            when C2 => LED(1) <= '1'; LED(7) <= '1';
+            when C3 => LED(2) <= '1'; LED(7) <= '1';             
+            when C5 => LED(3) <= '1'; LED(7) <= '1';
+            when U0 => LED(0) <= '1'; LED(7) <= '1'; LED(8) <= '1';
+            when U1 => LED(1) <= '1'; LED(7) <= '1'; LED(8) <= '1';
+            when U2 => LED(2) <= '1'; LED(7) <= '1'; LED(8) <= '1';
+            when U3 => LED(3) <= '1'; LED(7) <= '1'; LED(8) <= '1';
+            when U4 => LED(4) <= '1'; LED(7) <= '1'; LED(8) <= '1';
+            when U5 => LED(5) <= '1'; LED(7) <= '1'; LED(8) <= '1';
+            when U6 => LED(6) <= '1'; LED(7) <= '1'; LED(8) <= '1';
+            when A1 => LED(0) <= '1'; LED(7) <= '1'; LED(8) <= '1'; LED(9) <= '1';
+            when A2 => LED(1) <= '1'; LED(7) <= '1'; LED(8) <= '1'; LED(9) <= '1'; 
+            when A3 => LED(2) <= '1'; LED(7) <= '1'; LED(8) <= '1'; LED(9) <= '1';
+            when A4 => LED(3) <= '1'; LED(7) <= '1'; LED(8) <= '1'; LED(9) <= '1';          
+            when A5 => LED(4) <= '1'; LED(7) <= '1'; LED(8) <= '1'; LED(9) <= '1';
+            when A6 => LED(5) <= '1'; LED(7) <= '1'; LED(8) <= '1'; LED(9) <= '1';                   
             when others => null;
         end case;
     end process; 
