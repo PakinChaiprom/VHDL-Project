@@ -122,7 +122,7 @@ begin
                     elsif scan_idx=0 then char_code <= to_integer(unsigned(digit_0));
                     else hide_digit <= '1'; end if;
                 end if;
-                when "0100" =>   -- C ตามด้วยเลข (เช่น C 1)
+                when "0100" =>   --show toP
                 if scan_idx >= 4 then
                     hide_digit <= '1';
                 else
@@ -181,7 +181,21 @@ begin
                     when 0 => char_code <= to_integer(unsigned(digit_0)); -- หน่วย EV
                     when others => hide_digit <= '1';
                 end case;
-                when others => hide_digit <= '1';
+                
+                when "0101" =>   -- โชว์ C ตามด้วย index
+                case scan_idx is
+                    when 7 => char_code <= 12;   -- C
+                    when 6 => hide_digit <= '1';
+                    when 5 => hide_digit <= '1';
+                    when 4 => hide_digit <= '1';
+                    when 3 => hide_digit <= '1';
+                    when 2 => hide_digit <= '1';
+                    when 1 => hide_digit <= '1';
+                    when 0 => char_code <= idx_digit0;  -- 1 หรือ 2
+                    when others => hide_digit <= '1';
+                end case;
+                
+            when others => hide_digit <= '1';
             end case;
         end if;
     end process;
