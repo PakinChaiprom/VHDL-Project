@@ -18,7 +18,9 @@ entity ev_allocator is
         done : out std_logic;
         ev_query_index   : in  integer range 0 to 998;
         ev_result_out    : out std_logic_vector(9 downto 0);
-        population_total_out : out unsigned(31 downto 0)
+        population_total_out : out unsigned(31 downto 0);
+        pop_query_index : in  integer range 0 to 998;
+        pop_result_out  : out std_logic_vector(9 downto 0)
     );
 end ev_allocator;
 
@@ -66,6 +68,7 @@ architecture behavioral of ev_allocator is
 begin
     ev_result_out        <= std_logic_vector(base_ev_array(ev_query_index));
     population_total_out <= population_total;
+    pop_result_out <= std_logic_vector(population_array(pop_query_index));
     -------------------------------------------------
     -- Store population
     -------------------------------------------------
