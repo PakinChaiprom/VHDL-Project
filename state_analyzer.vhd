@@ -54,7 +54,7 @@ entity state_analyzer is
         ----------------------------------------------------------------
         -- ELECTORAL VOTES OF CURRENT STATE
         ----------------------------------------------------------------
-        state_ev_value  : in unsigned(7 downto 0);
+        state_ev_value  : in unsigned(9 downto 0);
 
         ----------------------------------------------------------------
         -- OUTPUT: TOTAL ELECTORAL VOTES
@@ -91,7 +91,7 @@ begin
 
 process(clk)
 
-    variable half_ev : unsigned(7 downto 0);
+    variable half_ev : unsigned(9 downto 0);
 
 begin
 
