@@ -93,7 +93,9 @@ begin
     
     pop_query_index_top <= to_integer(unsigned(selected_state_top));
 
-    state_sel_int  <= to_integer(unsigned(selected_state_top));
+    state_sel_int <= to_integer(unsigned(selected_state_top))
+                 when to_integer(unsigned(selected_state_top)) <= 998
+                 else 998;
     vote_count_top <= vote_c1(state_sel_int) + vote_c2(state_sel_int);
     
     pop_vote_c1_top <= vote_c1(state_sel_int);
@@ -231,7 +233,7 @@ begin
         pop_vote_c2     => pop_vote_c2_top,
         national_pop_c1 => national_pop_c1_top,
         national_pop_c2 => national_pop_c2_top,
-        state_ev_value  => unsigned(ev_result_top(7 downto 0)),
+        state_ev_value  => unsigned(ev_result_top),
         total_ev_c1     => total_ev_c1_top,
         total_ev_c2     => total_ev_c2_top,
         pending_ev_pool => pending_ev_top,
