@@ -303,7 +303,9 @@ begin
             pop_result_in,
             locked,
             voter_id_reg,
-            voted_flag_in                 
+            voted_flag_in,
+            vote_count_in,
+            done_analysis_in                 
             )
     begin
     
@@ -443,7 +445,7 @@ begin
                 
            when U5 =>  -- register vote
                 msg_sel <= "1001";
-                if vote_count_in >= unsigned(pop_result_in) then
+                if vote_count_in >= resize(unsigned(pop_result_in), 16) then
                     next_state <= U6;
                 else
                     next_state <= U0;
