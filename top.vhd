@@ -38,8 +38,17 @@ architecture structural of top is
     signal state_count_top : std_logic_vector(9 downto 0);
     signal ev_total_top : std_logic_vector(9 downto 0);
     signal pop_data_top : std_logic_vector(9 downto 0);
-    signal pop_index_top : integer range 0 to 49;
+    signal pop_index_top : integer range 0 to 998;
     signal pop_write_top : std_logic;
+    signal population_total_top : unsigned(31 downto 0);
+    signal ev_result_top    : std_logic_vector(9 downto 0);
+    signal ev_query_index_top : integer range 0 to 998;
+    signal ev_digit0        : std_logic_vector(3 downto 0);
+    signal ev_digit1        : std_logic_vector(3 downto 0);
+    signal ev_digit2        : std_logic_vector(3 downto 0);
+    signal disp_digit0      : std_logic_vector(3 downto 0);
+    signal disp_digit1      : std_logic_vector(3 downto 0);
+    signal disp_digit2      : std_logic_vector(3 downto 0);
     
 begin 
     btn_vec(0) <= btn_r;
@@ -47,6 +56,18 @@ begin
     btn_vec(2) <= btn_d;
     btn_vec(3) <= btn_u;
     btn_vec(4) <= btn_c;
+    
+    ev_query_index_top <= to_integer(unsigned(index_digit_top));
+    ev_digit0 <= std_logic_vector(
+        to_unsigned(to_integer(unsigned(ev_result_top)) mod 10, 4));
+    ev_digit1 <= std_logic_vector(
+        to_unsigned((to_integer(unsigned(ev_result_top)) / 10) mod 10, 4));
+    ev_digit2 <= std_logic_vector(
+        to_unsigned((to_integer(unsigned(ev_result_top)) / 100) mod 10, 4));
+    -- MUX for C5   
+    disp_digit0 <= ev_digit0 when state_out = "00000101" else digit0;
+    disp_digit1 <= ev_digit1 when state_out = "00000101" else digit1;
+    disp_digit2 <= ev_digit2 when state_out = "00000101" else digit2;
     
     main : entity work.main_fsm
     port map(
@@ -70,7 +91,8 @@ begin
         ev_total_out => ev_total_top,
         pop_data_out => pop_data_top,
         pop_index_out => pop_index_top,
-        pop_write_out => pop_write_top
+        pop_write_out => pop_write_top,
+        alloc_pop_total_in => population_total_top
     );
 
     digit_in : entity work.digit_input
@@ -97,9 +119,9 @@ begin
         clk => clk100MHZ,
         rst => '0',
 
-        digit_0 => digit0,
-        digit_1 => digit1,
-        digit_2 => digit2,
+        digit_0 => disp_digit0,
+        digit_1 => disp_digit1,
+        digit_2 => disp_digit2,
         index_digit => index_digit_top,
 
         cursor_pos => cursor,
@@ -120,6 +142,9 @@ begin
         pop_data => unsigned(pop_data_top),
         pop_index => pop_index_top,
         pop_write => pop_write_top,
-        done => alloc_done_top
+        ev_query_index => ev_query_index_top,
+        ev_result_out => ev_result_top,
+        done => alloc_done_top,
+        population_total_out => population_total_top
    );
 end structural;
