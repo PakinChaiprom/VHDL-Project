@@ -42,7 +42,8 @@ entity main_fsm is
         selected_candidate_out : out std_logic_vector(1 downto 0);
         vote_count_in : in unsigned(15 downto 0);
         start_analysis_out : out std_logic;
-        done_analysis_in   : in  std_logic 
+        done_analysis_in   : in  std_logic; 
+        admin_login_ok : in std_logic
            
     );
 end main_fsm;
@@ -192,6 +193,7 @@ begin
                 attempt_count <= 0;
                 locked        <= '0';
                 lock_count    <= 0;
+                selected_candidate <= 1;
             end if;
         end if;
     end process;
@@ -202,14 +204,14 @@ begin
         if rst = '1' then
             vote_valid_reg <= '0';
         elsif rising_edge(clk) then
-            vote_valid_reg <= '0';  -- default ดับทุก clock
+            vote_valid_reg <= '0';  
             if current_state = U3 
                and btn_center = '1'
                and locked = '0'
                and voter_id_reg > 0
                and voter_id_reg <= to_integer(unsigned(pop_result_in))
                and voted_flag_in = '0' then
-                vote_valid_reg <= '1';  -- pulse 1 clock
+                vote_valid_reg <= '1';  
             end if;
         end if;
     end process;
@@ -305,7 +307,8 @@ begin
             voter_id_reg,
             voted_flag_in,
             vote_count_in,
-            done_analysis_in                 
+            done_analysis_in,
+            admin_login_ok                 
             )
     begin
     
@@ -434,9 +437,8 @@ begin
                 end if;
                 
             when U4 =>  -- select candidate
-                msg_sel         <= "0100";  -- โชว์ toP (ใช้แทน C)
-                index_digit_out <= std_logic_vector(
-                                   to_unsigned(selected_candidate, 10));       
+                msg_sel         <= "0100"; 
+                index_digit_out <= std_logic_vector(to_unsigned(selected_candidate, 10));       
                 if btn_center = '1' then
                     next_state <= U5;
                 else
@@ -460,7 +462,7 @@ begin
                 end if;
                 
              when A1 =>           --admin login           
-                if btn_center = '1' then 
+                if btn_center = '1' and admin_login_ok = '1' then 
                     next_state <= A2;
                 else 
                     next_state <= A1;
@@ -501,11 +503,9 @@ begin
                 end if;
                 
               when A6 =>           --reset system        
-                if btn_center = '1' then                    
-                    next_state <= A2;
-                elsif btn_down = '1' then
-                    next_state <= C1;
-                end if;    
+                if btn_center = '1' then
+                    next_state <= A2;  -- cancel
+                end if;
                 
               when others =>
                     next_state <= C1;
