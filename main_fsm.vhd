@@ -96,6 +96,7 @@ begin
             state_count_reg <= 0;
             selected_state  <= 0;
             voter_id_reg    <= 0;
+            selected_candidate <= 1;
         elsif rising_edge(clk) then
             --C1 register state_count
             if current_state = C1 and state_confirmed = '1' and val_int >= 2 and val_int <= 999 then
@@ -193,7 +194,6 @@ begin
                 attempt_count <= 0;
                 locked        <= '0';
                 lock_count    <= 0;
-                selected_candidate <= 1;
             end if;
         end if;
     end process;
