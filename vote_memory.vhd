@@ -97,6 +97,8 @@ begin
                     voter_memory(to_integer(voter_id)) <= '1';
                     
                 end if;
+            else
+                voted_flag_reg <= '0'; 
             end if;
         end if;
     end process;
