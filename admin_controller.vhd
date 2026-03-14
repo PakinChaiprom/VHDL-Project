@@ -97,30 +97,13 @@ entity admin_controller is
         ----------------------------------------------------------------
         ev_total        : in  unsigned(9 downto 0);
         state_count     : in  unsigned(9 downto 0);
-
         ----------------------------------------------------------------
-        -- POPULAR VOTE PER STATE (FLAT PORT, MAX 8 STATES)
-        -- Source: vote counters in top.vhd updated during U5
-        -- Used in A3 to display per-state popular vote
+        --NEW port
         ----------------------------------------------------------------
-        pop_c1_s0 : in unsigned(15 downto 0);
-        pop_c1_s1 : in unsigned(15 downto 0);
-        pop_c1_s2 : in unsigned(15 downto 0);
-        pop_c1_s3 : in unsigned(15 downto 0);
-        pop_c1_s4 : in unsigned(15 downto 0);
-        pop_c1_s5 : in unsigned(15 downto 0);
-        pop_c1_s6 : in unsigned(15 downto 0);
-        pop_c1_s7 : in unsigned(15 downto 0);
-
-        pop_c2_s0 : in unsigned(15 downto 0);
-        pop_c2_s1 : in unsigned(15 downto 0);
-        pop_c2_s2 : in unsigned(15 downto 0);
-        pop_c2_s3 : in unsigned(15 downto 0);
-        pop_c2_s4 : in unsigned(15 downto 0);
-        pop_c2_s5 : in unsigned(15 downto 0);
-        pop_c2_s6 : in unsigned(15 downto 0);
-        pop_c2_s7 : in unsigned(15 downto 0);
-
+        pop_query_index : out integer range 0 to 998;
+        pop_c1_result   : in  unsigned(15 downto 0);
+        pop_c2_result   : in  unsigned(15 downto 0);
+        admin_login_ok  : out std_logic; 
         ----------------------------------------------------------------
         -- DISPLAY OUTPUTS → sevenseg_driver.vhd
         ----------------------------------------------------------------
@@ -164,7 +147,7 @@ architecture behavioral of admin_controller is
     -- view_index : current browse position in A3 (states) or A4 (candidates)
     -- Resets to 0 whenever FSM enters a new stage
     ----------------------------------------------------------------
-    signal view_index   : integer range 0 to 7 := 0;
+    signal view_index   : integer range 0 to 998 := 0;
 
     ----------------------------------------------------------------
     -- A6 RESET CONFIRMATION FLAG
@@ -187,7 +170,8 @@ architecture behavioral of admin_controller is
     signal prev_state   : std_logic_vector(7 downto 0) := (others => '0');
 
 begin
-
+    pop_query_index <= view_index;
+    
     process(clk, rst)
 
         variable v_ev_c1    : unsigned(15 downto 0);
@@ -207,6 +191,7 @@ begin
             rst_out       <= '0';
             disp_msg_sel  <= "0000";
             disp_index    <= (others => '0');
+            admin_login_ok <= '0';
 
         elsif rising_edge(clk) then
 
@@ -216,6 +201,7 @@ begin
             if state_in /= prev_state then
                 view_index    <= 0;
                 reset_confirm <= '0';
+                admin_login_ok <= '0';
             end if;
             prev_state <= state_in;
 
@@ -269,7 +255,9 @@ begin
                             if digit_value = ADMIN_PASSWORD then
                                 -- Correct: FSM handles transition to A2
                                 fail_count <= 0;
+                                admin_login_ok <= '1';
                             else
+                                admin_login_ok <= '0';
                                 -- Wrong password
                                 if fail_count + 1 >= 3 then
                                     locked       <= '1';
@@ -282,6 +270,7 @@ begin
                             end if;
                         end if;
                     end if;
+                  
 
                 ----------------------------------------------------
                 -- A2 : ADMIN HOME
@@ -293,34 +282,13 @@ begin
                     display_val  <= (others => '0');
 
                 ----------------------------------------------------
-                -- A3 : VIEW STATE POPULAR VOTE
-                -- Display: "1000" = S[index] [value]
-                -- disp_index = view_index (state number shown on left)
-                -- display_val = C1 popular vote of selected state
-                --
-                -- btn_right : view_index + 1 (up to state_count - 1)
-                -- btn_left  : view_index - 1 (down to 0)
-                -- btn_center: back to A2 (handled by main_fsm)
-                --
-                -- Flat port to array lookup:
-                --   view_index 0 → pop_c1_s0 ... view_index 7 → pop_c1_s7
+                -- A3 : NEW-Handle up to 999 state instend of 8        
                 ----------------------------------------------------
                 when "00100011" =>
-                    disp_msg_sel <= "1000";
-                    disp_index   <= std_logic_vector(to_unsigned(view_index, 10));
-
-                    case view_index is
-                        when 0 => display_val <= pop_c1_s0;
-                        when 1 => display_val <= pop_c1_s1;
-                        when 2 => display_val <= pop_c1_s2;
-                        when 3 => display_val <= pop_c1_s3;
-                        when 4 => display_val <= pop_c1_s4;
-                        when 5 => display_val <= pop_c1_s5;
-                        when 6 => display_val <= pop_c1_s6;
-                        when 7 => display_val <= pop_c1_s7;
-                        when others => display_val <= (others => '0');
-                    end case;
-
+                    disp_msg_sel    <= "1000";               
+                    display_val     <= pop_c1_result;
+                    disp_index <= std_logic_vector(to_unsigned(view_index, 10));
+                
                     if btn_right = '1' then
                         if view_index < to_integer(state_count) - 1 then
                             view_index <= view_index + 1;
@@ -456,6 +424,7 @@ begin
                     disp_msg_sel  <= "0000";
                     reset_confirm <= '0';
                     show_error    <= '0';
+                    admin_login_ok <= '0';
 
             end case;
 
