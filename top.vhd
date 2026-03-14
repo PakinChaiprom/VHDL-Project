@@ -71,6 +71,19 @@ architecture structural of top is
     signal done_analysis_top : std_logic;
     signal national_pop_c1_top : unsigned(31 downto 0) := (others => '0');
     signal national_pop_c2_top : unsigned(31 downto 0) := (others => '0');
+    signal admin_disp_digit0  : std_logic_vector(3 downto 0);
+    signal admin_disp_digit1  : std_logic_vector(3 downto 0);
+    signal admin_disp_digit2  : std_logic_vector(3 downto 0);
+    signal admin_msg_sel      : std_logic_vector(3 downto 0);
+    signal admin_index        : std_logic_vector(9 downto 0);
+    signal rst_from_admin     : std_logic;
+    signal global_rst         : std_logic;
+    signal msg_sel_final      : std_logic_vector(3 downto 0);
+    signal index_digit_final  : std_logic_vector(9 downto 0);
+    signal admin_pop_query    : integer range 0 to 998;
+    signal admin_pop_c1       : unsigned(15 downto 0);
+    signal admin_pop_c2       : unsigned(15 downto 0);
+    signal admin_login_ok_top : std_logic;
     
 begin 
     btn_vec(0) <= btn_r;
@@ -86,10 +99,23 @@ begin
         to_unsigned((to_integer(unsigned(ev_result_top)) / 10) mod 10, 4));
     ev_digit2 <= std_logic_vector(
         to_unsigned((to_integer(unsigned(ev_result_top)) / 100) mod 10, 4));
-    -- MUX for C5   
-    disp_digit0 <= ev_digit0 when state_out = "00000101" else digit0;
-    disp_digit1 <= ev_digit1 when state_out = "00000101" else digit1;
-    disp_digit2 <= ev_digit2 when state_out = "00000101" else digit2;
+    admin_pop_c1 <= vote_c1(admin_pop_query);
+    admin_pop_c2 <= vote_c2(admin_pop_query);
+    
+    -- MUX for C5 and admin
+    disp_digit0 <= admin_disp_digit0 when state_out(7 downto 5) = "001"
+                   else ev_digit0    when state_out = "00000101"
+                   else digit0;
+    disp_digit1 <= admin_disp_digit1 when state_out(7 downto 5) = "001"
+                   else ev_digit1    when state_out = "00000101"
+                   else digit1;
+    disp_digit2 <= admin_disp_digit2 when state_out(7 downto 5) = "001"
+                   else ev_digit2    when state_out = "00000101"
+                   else digit2;
+    msg_sel_final     <= admin_msg_sel when state_out(7 downto 5) = "001"
+                         else msg_sel;
+    index_digit_final <= admin_index   when state_out(7 downto 5) = "001"
+                         else index_digit_top;
     
     pop_query_index_top <= to_integer(unsigned(selected_state_top));
 
@@ -100,6 +126,8 @@ begin
     
     pop_vote_c1_top <= vote_c1(state_sel_int);
     pop_vote_c2_top <= vote_c2(state_sel_int);
+    
+    global_rst <= rst_from_admin;
         
     -- 2D array
     process(clk100MHZ)
@@ -120,7 +148,7 @@ begin
     main : entity work.main_fsm
     port map(
         clk => clk100MHZ,
-        rst => '0',       
+        rst => global_rst,       
         btn_down   => btn_debounced(2),  
         btn_up     => btn_debounced(3),
         btn_left   => btn_debounced(1),
@@ -148,14 +176,15 @@ begin
         selected_candidate_out => selected_candidate_top,
         vote_count_in => vote_count_top,
         start_analysis_out => start_analysis_top,
-        done_analysis_in   => done_analysis_top 
+        done_analysis_in   => done_analysis_top,
+        admin_login_ok => admin_login_ok_top 
     );
 
     digit_in : entity work.digit_input
     port map(
 
         clk => clk100MHZ,
-        rst => '0',
+        rst => global_rst,
         btn_pulse => btn_debounced,
         val_out => val_top,
 
@@ -173,16 +202,16 @@ begin
     generic map(CLK_FREQ => 100000000)
     port map(
         clk => clk100MHZ,
-        rst => '0',
+        rst => global_rst,
 
         digit_0 => disp_digit0,
         digit_1 => disp_digit1,
         digit_2 => disp_digit2,
-        index_digit => index_digit_top,
+        index_digit => index_digit_final,
 
         cursor_pos => cursor,
 
-        msg_sel => msg_sel,
+        msg_sel => msg_sel_final,
 
         seg => seg,
         an => an
@@ -191,7 +220,7 @@ begin
    ev_allocator : entity work.ev_allocator
    port map(
         clk => clk100MHZ,
-        rst => '0',
+        rst => global_rst,
         start => alloc_start_top,
         state_count => unsigned(state_count_top),
         ev_total => unsigned(ev_total_top),
@@ -209,7 +238,7 @@ begin
    vote_memory : entity work.vote_memory
    port map(
         clk        => clk100MHZ,
-        rst        => '0',
+        rst        => global_rst,
         voter_id   => unsigned(voter_id_top),
         vote_valid => vote_valid_top,
         voted_flag => voted_flag_top
@@ -219,7 +248,7 @@ begin
     generic map(CLK_FREQ => 100_000_000)
     port map(
         clk     => clk100MHZ,
-        rst     => '0',
+        rst     => global_rst,
         btn_in  => btn_vec,         
         btn_out => btn_debounced     
     );
@@ -227,7 +256,7 @@ begin
     state_ana : entity work.state_analyzer
     port map(
         clk             => clk100MHZ,
-        rst             => '0',
+        rst             => global_rst,
         start_analysis  => start_analysis_top,
         pop_vote_c1     => pop_vote_c1_top,
         pop_vote_c2     => pop_vote_c2_top,
@@ -240,4 +269,35 @@ begin
         done_analysis   => done_analysis_top
     );
     
+    admin_ctrl : entity work.admin_controller
+    generic map(CLK_FREQ => 100_000_000)
+    port map(
+        clk             => clk100MHZ,
+        rst             => global_rst,
+        state_in        => state_out,
+        digit_value     => unsigned(val_top),
+        digit_confirmed => confirmed,
+        btn_left        => btn_debounced(1),
+        btn_right       => btn_debounced(0),
+        btn_up          => btn_debounced(3),
+        btn_down        => btn_debounced(2),
+        btn_center      => btn_debounced(4),
+        total_ev_c1     => total_ev_c1_top,
+        total_ev_c2     => total_ev_c2_top,
+        pending_ev      => pending_ev_top,
+        national_pop_c1 => national_pop_c1_top,
+        national_pop_c2 => national_pop_c2_top,
+        ev_total        => unsigned(ev_total_top),
+        state_count     => unsigned(state_count_top),
+        pop_query_index => admin_pop_query,
+        pop_c1_result   => admin_pop_c1,
+        pop_c2_result   => admin_pop_c2,
+        disp_digit_0    => admin_disp_digit0,
+        disp_digit_1    => admin_disp_digit1,
+        disp_digit_2    => admin_disp_digit2,
+        disp_msg_sel    => admin_msg_sel,
+        disp_index      => admin_index,
+        rst_out         => rst_from_admin,
+        admin_login_ok => admin_login_ok_top
+    );
 end structural;
