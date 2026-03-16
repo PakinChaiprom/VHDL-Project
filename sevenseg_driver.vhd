@@ -160,28 +160,35 @@ begin
                     end if;
     
                 when "1000" =>             
-                case scan_idx is
-                    when 7 => char_code <= 5;          -- S
-                    when 6 =>                          -- ร้อย index
-                        if idx_digit2 = 0 then 
-                            hide_digit <= '1';
-                        else 
-                            char_code <= idx_digit2;
-                        end if;
-                    when 5 =>                          -- สิบ index
-                        if idx_digit2 = 0 and idx_digit1 = 0 then
-                            hide_digit <= '1';
-                        else 
-                            char_code <= idx_digit1;
-                        end if;
-                    when 4 => char_code <= idx_digit0; -- หน่วย index
-                    when 3 => hide_digit <= '1';       -- ดับ
-                    when 2 => char_code <= to_integer(unsigned(digit_2)); -- ร้อย EV
-                    when 1 => char_code <= to_integer(unsigned(digit_1)); -- สิบ EV
-                    when 0 => char_code <= to_integer(unsigned(digit_0)); -- หน่วย EV
-                    when others => hide_digit <= '1';
-                end case;
-                
+                    case scan_idx is
+                        when 7 => char_code <= 5;          -- S
+                        when 6 =>                          -- ร้อย index
+                            if idx_digit2 = 0 then 
+                                hide_digit <= '1';
+                            else 
+                                char_code <= idx_digit2;
+                            end if;
+                        when 5 =>                          -- สิบ index
+                            if idx_digit2 = 0 and idx_digit1 = 0 then
+                                hide_digit <= '1';
+                            else 
+                                char_code <= idx_digit1;
+                            end if;
+                        when 4 =>                          -- หน่วย index
+                            char_code <= idx_digit0;
+                            if cursor_pos = "11" and blink_state = '1' then hide_digit <= '1'; end if;
+                        when 3 => hide_digit <= '1';       -- ดับ
+                        when 2 =>                          -- ร้อย EV
+                            char_code <= to_integer(unsigned(digit_2));
+                            if cursor_pos = "10" and blink_state = '1' then hide_digit <= '1'; end if;
+                        when 1 =>                          -- สิบ EV
+                            char_code <= to_integer(unsigned(digit_1));
+                            if cursor_pos = "01" and blink_state = '1' then hide_digit <= '1'; end if;
+                        when 0 =>                          -- หน่วย EV
+                            char_code <= to_integer(unsigned(digit_0));
+                            if cursor_pos = "00" and blink_state = '1' then hide_digit <= '1'; end if;
+                        when others => hide_digit <= '1';
+                    end case;
                 when "0101" =>   -- โชว์ C ตามด้วย index
                 case scan_idx is
                     when 7 => char_code <= 12;   -- C
