@@ -159,7 +159,7 @@ begin
                         else char_code <= 13; end if;              -- d
                     end if;
     
-                when "1000" =>             
+                   when "1000" =>             
                     case scan_idx is
                         when 7 => char_code <= 5;          -- S
                         when 6 =>                          -- ร้อย index
@@ -189,6 +189,7 @@ begin
                             if cursor_pos = "00" and blink_state = '1' then hide_digit <= '1'; end if;
                         when others => hide_digit <= '1';
                     end case;
+                
                 when "0101" =>   -- โชว์ C ตามด้วย index
                 case scan_idx is
                     when 7 => char_code <= 12;   -- C
