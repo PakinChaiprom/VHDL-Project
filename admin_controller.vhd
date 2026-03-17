@@ -200,8 +200,7 @@ begin
             -- Reset view_index and reset_confirm on every stage transition
             if state_in /= prev_state then
                 view_index    <= 0;
-                reset_confirm <= '0';
-                admin_login_ok <= '0';
+                reset_confirm <= '0';             
             end if;
             prev_state <= state_in;
 
