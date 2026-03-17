@@ -1,19 +1,19 @@
-8
 library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
 entity top is
+    Generic (
+        CLK_FREQ : integer := 100_000_000  
+    );
     Port (
-        clk100MHZ     : in  std_logic;
-      
+        clk100MHZ     : in  std_logic;      
         btn_u      : in std_logic;
         btn_d    : in std_logic;
         btn_l    : in std_logic;
         btn_r   : in std_logic;
         btn_c  : in std_logic;
-        
-
+        btn_res : in std_logic;       
         seg     : out std_logic_vector(6 downto 0);
         an  : out std_logic_vector(7 downto 0);
         LED : out std_logic_vector(9 downto 0)
@@ -27,7 +27,7 @@ architecture structural of top is
     signal val_top : std_logic_vector(9 downto 0);
     signal confirmed   : std_logic;
     signal error : std_logic;
-    signal btn_vec : std_logic_vector(4 downto 0);
+    signal btn_vec : std_logic_vector(5 downto 0);
     signal digit0 : std_logic_vector(3 downto 0);
     signal digit1 : std_logic_vector(3 downto 0);
     signal digit2 : std_logic_vector(3 downto 0);
@@ -57,7 +57,7 @@ architecture structural of top is
     signal voted_flag_top  : std_logic;
     signal vote_valid_top  : std_logic;
     signal selected_candidate_top : std_logic_vector(1 downto 0);
-    signal btn_debounced : std_logic_vector(4 downto 0);
+    signal btn_debounced : std_logic_vector(5 downto 0);
     type vote_array_t is array(0 to 998) of unsigned(15 downto 0);
     signal vote_c1        : vote_array_t := (others => (others => '0'));
     signal vote_c2        : vote_array_t := (others => (others => '0'));
@@ -85,6 +85,7 @@ architecture structural of top is
     signal admin_pop_c1       : unsigned(15 downto 0);
     signal admin_pop_c2       : unsigned(15 downto 0);
     signal admin_login_ok_top : std_logic;
+    signal digit_clear_top : std_logic;
     
 begin 
     btn_vec(0) <= btn_r;
@@ -92,6 +93,7 @@ begin
     btn_vec(2) <= btn_d;
     btn_vec(3) <= btn_u;
     btn_vec(4) <= btn_c;
+    btn_vec(5) <= btn_res;
     
     ev_query_index_top <= to_integer(unsigned(index_digit_top));
     ev_digit0 <= std_logic_vector(
@@ -147,6 +149,7 @@ begin
     end process;
 
     main : entity work.main_fsm
+    generic map(CLK_FREQ => CLK_FREQ)
     port map(
         clk => clk100MHZ,
         rst => global_rst,       
@@ -178,7 +181,10 @@ begin
         vote_count_in => vote_count_top,
         start_analysis_out => start_analysis_top,
         done_analysis_in   => done_analysis_top,
-        admin_login_ok => admin_login_ok_top 
+        digit_clear_out => digit_clear_top,
+        admin_login_ok => admin_login_ok_top,
+        skip_in        => btn_debounced(5)       
+         
     );
 
     digit_in : entity work.digit_input
@@ -196,11 +202,12 @@ begin
         cursor_pos => cursor,
 
         confirmed => confirmed,
+        clear => digit_clear_top,
         error => error
     );
     
     seven_seg : entity work.sevenseg_driver
-    generic map(CLK_FREQ => 100000000)
+    generic map(CLK_FREQ => CLK_FREQ)
     port map(
         clk => clk100MHZ,
         rst => global_rst,
@@ -246,13 +253,13 @@ begin
    );
    
    btn_ctrl : entity work.button_controller
-    generic map(CLK_FREQ => 100_000_000)
+    generic map(CLK_FREQ => CLK_FREQ)
     port map(
         clk     => clk100MHZ,
         rst     => global_rst,
         btn_in  => btn_vec,         
         btn_out => btn_debounced     
-    );
+   );
     
     state_ana : entity work.state_analyzer
     port map(
@@ -271,7 +278,7 @@ begin
     );
     
     admin_ctrl : entity work.admin_controller
-    generic map(CLK_FREQ => 100_000_000)
+    generic map(CLK_FREQ => CLK_FREQ)
     port map(
         clk             => clk100MHZ,
         rst             => global_rst,
