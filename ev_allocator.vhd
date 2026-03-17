@@ -43,7 +43,7 @@ architecture behavioral of ev_allocator is
 
     signal mult_a : unsigned(15 downto 0) := (others => '0');
     signal mult_b : unsigned(15 downto 0) := (others => '0');
-    signal mult_p : unsigned(31 downto 0);
+    signal mult_p : unsigned(63 downto 0);
 
     signal div_q  : unsigned(15 downto 0);
     signal div_r  : unsigned(15 downto 0);
