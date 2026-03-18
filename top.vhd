@@ -53,7 +53,7 @@ architecture structural of top is
     signal selected_state_top : std_logic_vector(9 downto 0);
     signal pop_query_index_top : integer range 0 to 998;
     signal pop_result_top : std_logic_vector(9 downto 0);
-    signal voter_id_top : std_logic_vector(12 downto 0);
+    signal voter_id_top : std_logic_vector(9 downto 0);
     signal voted_flag_top  : std_logic;
     signal vote_valid_top  : std_logic;
     signal selected_candidate_top : std_logic_vector(1 downto 0);
@@ -133,16 +133,21 @@ begin
     global_rst <= rst_from_admin;
         
     -- 2D array
-    process(clk100MHZ)
+    process(clk100MHZ, global_rst)
     begin
-        if rising_edge(clk100MHZ) then
+        if global_rst = '1' then
+            vote_c1             <= (others => (others => '0'));
+            vote_c2             <= (others => (others => '0'));
+            national_pop_c1_top <= (others => '0');
+            national_pop_c2_top <= (others => '0');
+        elsif rising_edge(clk100MHZ) then
             if vote_valid_top = '1' then
                 if selected_candidate_top = "01" then
                     vote_c1(state_sel_int)  <= vote_c1(state_sel_int) + 1;
-                    national_pop_c1_top     <= national_pop_c1_top + 1; 
+                    national_pop_c1_top     <= national_pop_c1_top + 1;
                 else
                     vote_c2(state_sel_int)  <= vote_c2(state_sel_int) + 1;
-                    national_pop_c2_top     <= national_pop_c2_top + 1;  
+                    national_pop_c2_top     <= national_pop_c2_top + 1;
                 end if;
             end if;
         end if;
@@ -249,7 +254,8 @@ begin
         rst        => global_rst,
         voter_id   => unsigned(voter_id_top),
         vote_valid => vote_valid_top,
-        voted_flag => voted_flag_top
+        voted_flag => voted_flag_top,
+        state_id   => state_sel_int
    );
    
    btn_ctrl : entity work.button_controller
