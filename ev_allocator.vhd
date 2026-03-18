@@ -70,18 +70,6 @@ begin
     population_total_out <= population_total;
     pop_result_out <= std_logic_vector(population_array(pop_query_index));
     -------------------------------------------------
-    -- Store population
-    -------------------------------------------------
-    process(clk)
-    begin
-        if rising_edge(clk) then
-            if pop_write = '1' then
-                population_array(pop_index) <= pop_data;
-            end if;
-        end if;
-    end process;
-
-    -------------------------------------------------
     -- Combinational Multiplier
     -------------------------------------------------
     mult_p <= resize(mult_a, 32) * resize(mult_b, 32);
@@ -108,9 +96,15 @@ begin
             ev_to_add        <= (others => '0');
             winner           <= 0;
             max_rem          <= (others => '0');
+            population_array <= (others => (others => '0'));  -- เพิ่ม
+            base_ev_array    <= (others => (others => '0')); 
 
         elsif rising_edge(clk) then
 
+             if pop_write = '1' then
+                population_array(pop_index) <= pop_data;
+            end if;
+            
             case current_state is
 
                 -------------------------------------------------
