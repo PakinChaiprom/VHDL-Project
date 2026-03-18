@@ -34,13 +34,20 @@ architecture Behavioral of sevenseg_driver is
     signal idx_digit0 : integer range 0 to 9 := 0;
     signal idx_digit1 : integer range 0 to 9 := 0;
     signal idx_digit2 : integer range 0 to 9 := 0;
+    signal raw_digit0 : integer range 0 to 9 := 0;
+    signal raw_digit1 : integer range 0 to 9 := 0;
+    signal raw_digit2 : integer range 0 to 9 := 0;
 begin
 
     process(index_digit)
     begin
-        idx_digit0 <= to_integer(unsigned(index_digit)) mod 10;
-        idx_digit1 <= (to_integer(unsigned(index_digit)) / 10) mod 10;
-        idx_digit2 <= (to_integer(unsigned(index_digit)) / 100) mod 10;
+        raw_digit0 <= to_integer(unsigned(index_digit)) mod 10;
+        raw_digit1 <= (to_integer(unsigned(index_digit)) / 10) mod 10;
+        raw_digit2 <= (to_integer(unsigned(index_digit)) / 100) mod 10;
+    
+        idx_digit0 <= (to_integer(unsigned(index_digit)) + 1) mod 10;
+        idx_digit1 <= ((to_integer(unsigned(index_digit)) + 1) / 10) mod 10;
+        idx_digit2 <= ((to_integer(unsigned(index_digit)) + 1) / 100) mod 10;
     end process;
     -- โพรเซสที่ 1: นาฬิกานับจังหวะ สแกนจอ และ ไฟกระพริบ
     process(clk, rst)
@@ -69,7 +76,7 @@ begin
     end process;
 
     -- โพรเซสที่ 2: เลือกว่าจะโชว์ตัวเลขปกติ หรือข้อความ
-    process(scan_idx, msg_sel, digit_0, digit_1, digit_2, cursor_pos, blink_state, index_digit, idx_digit0, idx_digit1, idx_digit2)
+    process(scan_idx, msg_sel, digit_0, digit_1, digit_2, cursor_pos, blink_state, index_digit, idx_digit0, idx_digit1, idx_digit2, raw_digit0)
     begin
         hide_digit <= '0';       -- เริ่มต้นให้ไฟติดปกติ
         an <= (others => '1');            -- ปิดจอทุกหลัก (Active Low = 1 คือปิด)
@@ -199,7 +206,7 @@ begin
                     when 3 => hide_digit <= '1';
                     when 2 => hide_digit <= '1';
                     when 1 => hide_digit <= '1';
-                    when 0 => char_code <= idx_digit0;  -- 1 หรือ 2
+                    when 0 => char_code <= raw_digit0;  -- 1 หรือ 2
                     when others => hide_digit <= '1';
                 end case;
                 
