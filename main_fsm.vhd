@@ -36,7 +36,7 @@ entity main_fsm is
         alloc_pop_total_in : in unsigned(31 downto 0);
         alloc_start_out : out std_logic;
         alloc_done_in  : in  std_logic;
-        voter_id_out : out std_logic_vector(12 downto 0);       
+        voter_id_out : out std_logic_vector(9 downto 0);       
         voted_flag_in  : in  std_logic;   
         vote_valid_out : out std_logic;
         selected_candidate_out : out std_logic_vector(1 downto 0);
@@ -77,14 +77,17 @@ architecture behavioral of main_fsm is
     signal digit_clear_reg : std_logic := '0';
     signal prev_confirmed : std_logic := '0';
     signal ev_total_reg : integer range 0 to 999 := 0;
+    signal prev_state_reg : state_type := C1;
+    signal completed_states : integer range 0 to 999 := 0;
 
 
 begin
     val_int <= to_integer(unsigned(val_in));
     selected_state_out <= std_logic_vector(to_unsigned(selected_state, 10));
-    voter_id_out       <= std_logic_vector(to_unsigned(voter_id_reg, 13));
+    voter_id_out       <= std_logic_vector(to_unsigned(voter_id_reg, 10));
     selected_candidate_out <= std_logic_vector(to_unsigned(selected_candidate, 2));
     digit_clear_out <= digit_clear_reg;
+    prev_state_reg <= current_state;
    
     -- State register
     process(clk, rst)
@@ -106,6 +109,7 @@ begin
             voter_id_reg    <= 0;
             selected_candidate <= 1;
             digit_clear_reg <= '0';
+            completed_states   <= 0;
         elsif rising_edge(clk) then
             digit_clear_reg <= '0';
             prev_confirmed  <= state_confirmed;  
@@ -114,8 +118,10 @@ begin
                (current_state = C3 and prev_confirmed = '1' and val_int > 0) or
                (current_state = U1 and btn_center = '1' and state_index < state_count_reg) or
                (current_state = U2 and prev_confirmed = '1') or
-               (current_state = U4 and btn_center = '1') or  -- เพิ่ม
-               (current_state = A1 and btn_center = '1' and admin_login_ok = '1') then
+               (current_state = U3 and btn_center = '1' and locked = '0' and
+               (voter_id_reg = 0 or voter_id_reg > to_integer(unsigned(pop_result_in)))) or 
+               (current_state = U4 and btn_center = '1') or
+               (prev_state_reg /= A1 and current_state = A1) then              
                 digit_clear_reg <= '1';
             end if;
             --C1 register state_count
@@ -150,6 +156,12 @@ begin
             if current_state = C5 and btn_center = '1' then
                 state_index <= 0;
             end if;         
+            if prev_state_reg = U5 then
+                if to_integer(unsigned(pop_result_in)) > 0 and
+                   vote_count_in >= resize(unsigned(pop_result_in), 16) then
+                    completed_states <= completed_states + 1;
+                end if;
+            end if;                           
             -- U1 Left/Right view state and confirm selected
             if current_state = U1 then
                   if btn_center = '1' then
@@ -334,7 +346,8 @@ begin
             vote_count_in,
             done_analysis_in,
             admin_login_ok,
-            skip_in                
+            skip_in,
+            completed_states                
             )
     begin
     
@@ -469,9 +482,14 @@ begin
                 end if;
                 
            when U5 =>  -- register vote
-                msg_sel <= "1001";
-                if vote_count_in >= resize(unsigned(pop_result_in), 16) then
-                    next_state <= U6;
+                 msg_sel <= "1001";
+                if to_integer(unsigned(pop_result_in)) > 0 and
+                   vote_count_in >= resize(unsigned(pop_result_in), 16) then            
+                    if completed_states + 1 >= state_count_reg then
+                        next_state <= U6;  
+                    else
+                        next_state <= U0;  
+                    end if;
                 else
                     next_state <= U0;
                 end if;
