@@ -79,6 +79,7 @@ architecture behavioral of main_fsm is
     signal ev_total_reg : integer range 0 to 999 := 0;
     signal prev_state_reg : state_type := C1;
     signal completed_states : integer range 0 to 999 := 0;
+    signal c3_all_filled : std_logic := '0';
 
 
 begin
@@ -110,6 +111,7 @@ begin
             selected_candidate <= 1;
             digit_clear_reg <= '0';
             completed_states   <= 0;
+            c3_all_filled <= '0';
         elsif rising_edge(clk) then
             digit_clear_reg <= '0';
             prev_confirmed  <= state_confirmed;  
@@ -131,6 +133,7 @@ begin
             --C2 reset state_index before C3
             if current_state = C2 and state_confirmed = '1' and val_int > 0 then
                 state_index <= 0;
+                c3_all_filled  <= '0';
             end if;
             if current_state = C2 and state_confirmed = '1' and val_int > 0 then
                 ev_total_reg <= val_int;
@@ -138,7 +141,10 @@ begin
             --C3 next state index
             if current_state = C3 and state_confirmed = '1' and val_int > 0 then
                 if state_index + 1 < state_count_reg then
-                    state_index <= state_index + 1;          
+                    state_index <= state_index + 1;
+                else
+                    state_index <= 0;
+                    c3_all_filled <= '1';           
                 end if;
             end if;
             --C5 Left/Right view EV each state
@@ -347,7 +353,8 @@ begin
             done_analysis_in,
             admin_login_ok,
             skip_in,
-            completed_states                
+            completed_states,
+            c3_all_filled                
             )
     begin
     
@@ -387,8 +394,12 @@ begin
            when C3 =>
                 msg_sel <= "1000";
                 index_digit_out <= std_logic_vector(to_unsigned(state_index, 10));               
-                if skip_in = '1' then            
+                
+                if skip_in = '1' and c3_all_filled = '1' then  -- ← เพิ่ม condition
                     next_state <= C4;
+                elsif skip_in = '1' and c3_all_filled = '0' then
+                    msg_sel <= "0010";  -- แสดง Err ถ้ายังไม่ครบ
+                    next_state <= C3;
                 elsif state_confirmed = '1' then
                     if val_int > 0 then
                         pop_data_out  <= val_in;
