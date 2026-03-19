@@ -36,14 +36,17 @@ entity main_fsm is
         alloc_pop_total_in : in unsigned(31 downto 0);
         alloc_start_out : out std_logic;
         alloc_done_in  : in  std_logic;
-        voter_id_out : out std_logic_vector(12 downto 0);       
+        voter_id_out : out std_logic_vector(9 downto 0);       
         voted_flag_in  : in  std_logic;   
         vote_valid_out : out std_logic;
         selected_candidate_out : out std_logic_vector(1 downto 0);
         vote_count_in : in unsigned(15 downto 0);
         start_analysis_out : out std_logic;
         done_analysis_in   : in  std_logic; 
-        admin_login_ok : in std_logic
+        admin_login_ok : in std_logic;
+        
+        digit_clear_out : out std_logic;
+        skip_in : in std_logic  -- ปุ่มสำหรับไป C4
            
     );
 end main_fsm;
@@ -58,12 +61,12 @@ architecture behavioral of main_fsm is
 
     signal current_state, next_state : state_type;
     signal val_int : integer;
-    signal state_index     : integer range 0 to 999 := 0;
-    signal state_count_reg : integer range 0 to 999 := 0;
+    signal state_index     : integer range 0 to 50 := 0;
+    signal state_count_reg : integer range 0 to 50 := 0;
     signal alloc_start_reg  : std_logic := '0';
     signal alloc_started    : std_logic := '0';
-    signal selected_state : integer range 0 to 999 := 0;
-    signal voter_id_reg : integer range 0 to 999 := 0;
+    signal selected_state : integer range 0 to 50 := 0;
+    signal voter_id_reg : integer range 0 to 100 := 0;
     signal attempt_count : integer range 0 to 3 := 0;
     signal lock_count    : integer range 0 to 1100000000 := 0;
     signal locked        : std_logic := '0'; 
@@ -71,13 +74,22 @@ architecture behavioral of main_fsm is
     signal selected_candidate : integer range 1 to 2 := 1;
     signal analysis_started : std_logic := '0';
     signal analysis_start_reg : std_logic := '0';
+    signal digit_clear_reg : std_logic := '0';
+    signal prev_confirmed : std_logic := '0';
+    signal ev_total_reg : integer range 0 to 999 := 0;
+    signal prev_state_reg : state_type := C1;
+    signal completed_states : integer range 0 to 50 := 0;
+    signal c3_all_filled : std_logic := '0';
+
 
 begin
     val_int <= to_integer(unsigned(val_in));
     selected_state_out <= std_logic_vector(to_unsigned(selected_state, 10));
-    voter_id_out       <= std_logic_vector(to_unsigned(voter_id_reg, 13));
+    voter_id_out       <= std_logic_vector(to_unsigned(voter_id_reg, 10));
     selected_candidate_out <= std_logic_vector(to_unsigned(selected_candidate, 2));
-
+    digit_clear_out <= digit_clear_reg;
+    prev_state_reg <= current_state;
+   
     -- State register
     process(clk, rst)
     begin
@@ -97,10 +109,34 @@ begin
             selected_state  <= 0;
             voter_id_reg    <= 0;
             selected_candidate <= 1;
+            digit_clear_reg <= '0';
+            completed_states   <= 0;
+            c3_all_filled <= '0';
         elsif rising_edge(clk) then
+            digit_clear_reg <= '0';
+            prev_confirmed  <= state_confirmed;  
+            if (current_state = C1 and prev_confirmed = '1' and val_int >= 2 and val_int <= 999) or
+               (current_state = C2 and prev_confirmed = '1' and val_int > 0) or
+               (current_state = C3 and prev_confirmed = '1' and val_int > 0) or
+               (current_state = U1 and btn_center = '1' and state_index < state_count_reg) or
+               (current_state = U2 and prev_confirmed = '1') or
+               (current_state = U3 and btn_center = '1' and locked = '0' and
+               (voter_id_reg = 0 or voter_id_reg > to_integer(unsigned(pop_result_in)))) or 
+               (current_state = U4 and btn_center = '1') or
+               (prev_state_reg /= A1 and current_state = A1) then              
+                digit_clear_reg <= '1';
+            end if;
             --C1 register state_count
-            if current_state = C1 and state_confirmed = '1' and val_int >= 2 and val_int <= 999 then
+            if current_state = C1 and state_confirmed = '1' and val_int >= 2 and val_int <= 50 then
                 state_count_reg <= val_int;
+            end if;
+            --C2 reset state_index before C3
+            if current_state = C2 and state_confirmed = '1' and val_int > 0 then
+                state_index <= 0;
+                c3_all_filled  <= '0';
+            end if;
+            if current_state = C2 and state_confirmed = '1' and val_int > 0 then
+                ev_total_reg <= val_int;
             end if;
             --C3 next state index
             if current_state = C3 and state_confirmed = '1' and val_int > 0 then
@@ -108,6 +144,7 @@ begin
                     state_index <= state_index + 1;
                 else
                     state_index <= 0;
+                    c3_all_filled <= '1';           
                 end if;
             end if;
             --C5 Left/Right view EV each state
@@ -125,6 +162,12 @@ begin
             if current_state = C5 and btn_center = '1' then
                 state_index <= 0;
             end if;         
+            if prev_state_reg = U5 then
+                if to_integer(unsigned(pop_result_in)) > 0 and
+                   vote_count_in >= resize(unsigned(pop_result_in), 16) then
+                    completed_states <= completed_states + 1;
+                end if;
+            end if;                           
             -- U1 Left/Right view state and confirm selected
             if current_state = U1 then
                   if btn_center = '1' then
@@ -308,25 +351,28 @@ begin
             voted_flag_in,
             vote_count_in,
             done_analysis_in,
-            admin_login_ok                 
+            admin_login_ok,
+            skip_in,
+            completed_states,
+            c3_all_filled                
             )
     begin
     
     next_state    <= current_state;
     msg_sel       <= "0000";
     index_digit_out <= (others => '0');
-    state_count_out <= (others => '0');
-    ev_total_out    <= (others => '0');
+    state_count_out <= std_logic_vector(to_unsigned(state_count_reg, 10));
+    ev_total_out    <= std_logic_vector(to_unsigned(ev_total_reg, 10));
     pop_data_out    <= (others => '0');
     pop_index_out   <= 0;
     pop_write_out   <= '0'; 
+  
     
         case current_state is                          
             when C1 => --set state count 
                 msg_sel <= "0000";
                 if state_confirmed = '1' then
-                    if val_int >= 2 and val_int <=999 then
-                        state_count_out <= val_in;
+                    if val_int >= 2 and val_int <=50 then                       
                         next_state <= C2;
                     else
                         msg_sel <= "0010";
@@ -338,7 +384,6 @@ begin
                 msg_sel <= "0000";
                 if  state_confirmed = '1' then
                     if val_int > 0 then
-                        ev_total_out <= val_in;
                         next_state <= C3;
                     else
                         msg_sel <= "0010";
@@ -346,21 +391,23 @@ begin
                     end if;
                 end if;
             
-            when C3 => --set each state population
+           when C3 =>
                 msg_sel <= "1000";
-                index_digit_out <= std_logic_vector(to_unsigned(state_index, 10));            
-                if  state_confirmed = '1' then
-                    if val_int > 0 then
-                        pop_data_out <= val_in;
+                index_digit_out <= std_logic_vector(to_unsigned(state_index, 10));               
+                
+                if skip_in = '1' and c3_all_filled = '1' then  -- ← เพิ่ม condition
+                    next_state <= C4;
+                elsif skip_in = '1' and c3_all_filled = '0' then
+                    msg_sel <= "0010";  -- แสดง Err ถ้ายังไม่ครบ
+                    next_state <= C3;
+                elsif state_confirmed = '1' then
+                    if val_int > 0 and val_int <= 100 then
+                        pop_data_out  <= val_in;
                         pop_index_out <= state_index;
                         pop_write_out <= '1';
-                        if state_index + 1 < state_count_reg then                         
-                            next_state <= C3;
-                        else
-                            next_state <= C4;
-                        end if;
+                        next_state    <= C3;
                     else
-                        msg_sel <= "0010";
+                        msg_sel    <= "0010";
                         next_state <= C3;
                     end if;
                 end if;
@@ -396,7 +443,7 @@ begin
                 end if;
                 
             when U1 =>  -- select state
-                msg_sel         <= "1000";   
+                msg_sel         <= "1010";   
                 index_digit_out <= std_logic_vector(to_unsigned(state_index, 10));
                 
                 if btn_center = '1' then
@@ -430,14 +477,15 @@ begin
                         msg_sel    <= "0010";
                         next_state <= U0;   
                     else
+                        msg_sel <= "1011";
                         next_state     <= U4;
                     end if;
-                else
+                else                   
                     next_state <= U3;
                 end if;
                 
             when U4 =>  -- select candidate
-                msg_sel         <= "0100"; 
+                msg_sel         <= "0101"; 
                 index_digit_out <= std_logic_vector(to_unsigned(selected_candidate, 10));       
                 if btn_center = '1' then
                     next_state <= U5;
@@ -446,9 +494,14 @@ begin
                 end if;
                 
            when U5 =>  -- register vote
-                msg_sel <= "1001";
-                if vote_count_in >= resize(unsigned(pop_result_in), 16) then
-                    next_state <= U6;
+                 msg_sel <= "1001";
+                if to_integer(unsigned(pop_result_in)) > 0 and
+                   vote_count_in >= resize(unsigned(pop_result_in), 16) then            
+                    if completed_states + 1 >= state_count_reg then
+                        next_state <= U6;  
+                    else
+                        next_state <= U0;  
+                    end if;
                 else
                     next_state <= U0;
                 end if;
@@ -520,8 +573,8 @@ begin
         case current_state is   
             when C1 => LED(0) <= '1'; LED(7) <= '1';
             when C2 => LED(1) <= '1'; LED(7) <= '1';
-            when C3 => LED(2) <= '1'; LED(7) <= '1';             
-            when C5 => LED(3) <= '1'; LED(7) <= '1';
+            when C3 => LED(2) <= '1'; LED(7) <= '1';              
+            when C5 => LED(3) <= '1'; LED(7) <= '1'; 
             when U0 => LED(0) <= '1'; LED(7) <= '1'; LED(8) <= '1';
             when U1 => LED(1) <= '1'; LED(7) <= '1'; LED(8) <= '1';
             when U2 => LED(2) <= '1'; LED(7) <= '1'; LED(8) <= '1';
