@@ -26,7 +26,7 @@ end ev_allocator;
 
 architecture behavioral of ev_allocator is
     
-    constant MAX_STATES : integer := 999;
+    constant MAX_STATES : integer := 50;
 
     type pop_array_t is array (0 to MAX_STATES-1) of unsigned(9 downto 0);
     signal population_array : pop_array_t := (others => (others => '0'));
