@@ -61,12 +61,12 @@ architecture behavioral of main_fsm is
 
     signal current_state, next_state : state_type;
     signal val_int : integer;
-    signal state_index     : integer range 0 to 999 := 0;
-    signal state_count_reg : integer range 0 to 999 := 0;
+    signal state_index     : integer range 0 to 50 := 0;
+    signal state_count_reg : integer range 0 to 50 := 0;
     signal alloc_start_reg  : std_logic := '0';
     signal alloc_started    : std_logic := '0';
-    signal selected_state : integer range 0 to 999 := 0;
-    signal voter_id_reg : integer range 0 to 999 := 0;
+    signal selected_state : integer range 0 to 50 := 0;
+    signal voter_id_reg : integer range 0 to 100 := 0;
     signal attempt_count : integer range 0 to 3 := 0;
     signal lock_count    : integer range 0 to 1100000000 := 0;
     signal locked        : std_logic := '0'; 
@@ -78,7 +78,7 @@ architecture behavioral of main_fsm is
     signal prev_confirmed : std_logic := '0';
     signal ev_total_reg : integer range 0 to 999 := 0;
     signal prev_state_reg : state_type := C1;
-    signal completed_states : integer range 0 to 999 := 0;
+    signal completed_states : integer range 0 to 50 := 0;
     signal c3_all_filled : std_logic := '0';
 
 
@@ -127,7 +127,7 @@ begin
                 digit_clear_reg <= '1';
             end if;
             --C1 register state_count
-            if current_state = C1 and state_confirmed = '1' and val_int >= 2 and val_int <= 999 then
+            if current_state = C1 and state_confirmed = '1' and val_int >= 2 and val_int <= 50 then
                 state_count_reg <= val_int;
             end if;
             --C2 reset state_index before C3
@@ -372,7 +372,7 @@ begin
             when C1 => --set state count 
                 msg_sel <= "0000";
                 if state_confirmed = '1' then
-                    if val_int >= 2 and val_int <=999 then                       
+                    if val_int >= 2 and val_int <=50 then                       
                         next_state <= C2;
                     else
                         msg_sel <= "0010";
@@ -401,7 +401,7 @@ begin
                     msg_sel <= "0010";  -- แสดง Err ถ้ายังไม่ครบ
                     next_state <= C3;
                 elsif state_confirmed = '1' then
-                    if val_int > 0 then
+                    if val_int > 0 and val_int <= 100 then
                         pop_data_out  <= val_in;
                         pop_index_out <= state_index;
                         pop_write_out <= '1';
@@ -443,7 +443,7 @@ begin
                 end if;
                 
             when U1 =>  -- select state
-                msg_sel         <= "1000";   
+                msg_sel         <= "1010";   
                 index_digit_out <= std_logic_vector(to_unsigned(state_index, 10));
                 
                 if btn_center = '1' then
@@ -477,14 +477,15 @@ begin
                         msg_sel    <= "0010";
                         next_state <= U0;   
                     else
+                        msg_sel <= "1011";
                         next_state     <= U4;
                     end if;
-                else
+                else                   
                     next_state <= U3;
                 end if;
                 
             when U4 =>  -- select candidate
-                msg_sel         <= "0100"; 
+                msg_sel         <= "0101"; 
                 index_digit_out <= std_logic_vector(to_unsigned(selected_candidate, 10));       
                 if btn_center = '1' then
                     next_state <= U5;
