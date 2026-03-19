@@ -126,7 +126,7 @@ architecture behavioral of admin_controller is
     ----------------------------------------------------------------
     -- CONSTANTS
     ----------------------------------------------------------------
-    constant ADMIN_PASSWORD : unsigned(9 downto 0) := to_unsigned(123, 10);
+    constant ADMIN_PASSWORD : unsigned(9 downto 0) := to_unsigned(000, 10);
     constant LOCK_MAX       : integer := CLK_FREQ * 10;  -- 10 seconds
     constant ERROR_MAX      : integer := CLK_FREQ;       -- 1 second
 
@@ -147,7 +147,7 @@ architecture behavioral of admin_controller is
     -- view_index : current browse position in A3 (states) or A4 (candidates)
     -- Resets to 0 whenever FSM enters a new stage
     ----------------------------------------------------------------
-    signal view_index   : integer range 0 to 998 := 0;
+    signal view_index   : integer range 0 to 49 := 0;
 
     ----------------------------------------------------------------
     -- A6 RESET CONFIRMATION FLAG
@@ -168,6 +168,7 @@ architecture behavioral of admin_controller is
     -- on entry to each new stage
     ----------------------------------------------------------------
     signal prev_state   : std_logic_vector(7 downto 0) := (others => '0');
+    signal a3_show_c2 : std_logic := '0';
 
 begin
     pop_query_index <= view_index;
@@ -201,7 +202,7 @@ begin
             if state_in /= prev_state then
                 view_index    <= 0;
                 reset_confirm <= '0';
-                admin_login_ok <= '0';
+                a3_show_c2    <= '0';             
             end if;
             prev_state <= state_in;
 
@@ -285,9 +286,20 @@ begin
                 -- A3 : NEW-Handle up to 999 state instend of 8        
                 ----------------------------------------------------
                 when "00100011" =>
-                    disp_msg_sel    <= "1000";               
-                    display_val     <= pop_c1_result;
+                    disp_msg_sel    <= "1000";                             
                     disp_index <= std_logic_vector(to_unsigned(view_index, 10));
+                
+                     if btn_up = '1' then
+                        a3_show_c2 <= '0';
+                    elsif btn_down = '1' then
+                        a3_show_c2 <= '1';
+                    end if;
+                    
+                    if a3_show_c2 = '0' then
+                        display_val <= pop_c1_result;
+                    else
+                        display_val <= pop_c2_result;
+                    end if;
                 
                     if btn_right = '1' then
                         if view_index < to_integer(state_count) - 1 then
@@ -314,10 +326,10 @@ begin
                     disp_msg_sel <= "1000";
 
                     if view_index = 0 then
-                        disp_index  <= std_logic_vector(to_unsigned(1, 10));
+                        disp_index  <= std_logic_vector(to_unsigned(0, 10));
                         display_val <= total_ev_c1;
                     else
-                        disp_index  <= std_logic_vector(to_unsigned(2, 10));
+                        disp_index  <= std_logic_vector(to_unsigned(1, 10));
                         display_val <= total_ev_c2;
                     end if;
 
