@@ -14,7 +14,8 @@ entity sevenseg_driver is
         msg_sel    : in  STD_LOGIC_VECTOR(3 downto 0); -- โหมดหน้าจอ (สั่งจาก เจโน่/FSM)
         seg        : out STD_LOGIC_VECTOR(6 downto 0); -- สายคุมไฟ 7 ขีด (A-G)
         index_digit : in STD_LOGIC_VECTOR(9 downto 0);  -- รับ state_index จาก main
-        an          : out STD_LOGIC_VECTOR(7 downto 0)  -- เปลี่ยนจาก 4 บิต เป็น 8 บิต
+        an          : out STD_LOGIC_VECTOR(7 downto 0);
+        blink_en : in std_logic := '1'  
     );
 end sevenseg_driver;
 
@@ -34,13 +35,20 @@ architecture Behavioral of sevenseg_driver is
     signal idx_digit0 : integer range 0 to 9 := 0;
     signal idx_digit1 : integer range 0 to 9 := 0;
     signal idx_digit2 : integer range 0 to 9 := 0;
+    signal raw_digit0 : integer range 0 to 9 := 0;
+    signal raw_digit1 : integer range 0 to 9 := 0;
+    signal raw_digit2 : integer range 0 to 9 := 0;
 begin
 
     process(index_digit)
     begin
-        idx_digit0 <= to_integer(unsigned(index_digit)) mod 10;
-        idx_digit1 <= (to_integer(unsigned(index_digit)) / 10) mod 10;
-        idx_digit2 <= (to_integer(unsigned(index_digit)) / 100) mod 10;
+        raw_digit0 <= to_integer(unsigned(index_digit)) mod 10;
+        raw_digit1 <= (to_integer(unsigned(index_digit)) / 10) mod 10;
+        raw_digit2 <= (to_integer(unsigned(index_digit)) / 100) mod 10;
+    
+        idx_digit0 <= (to_integer(unsigned(index_digit)) + 1) mod 10;
+        idx_digit1 <= ((to_integer(unsigned(index_digit)) + 1) / 10) mod 10;
+        idx_digit2 <= ((to_integer(unsigned(index_digit)) + 1) / 100) mod 10;
     end process;
     -- โพรเซสที่ 1: นาฬิกานับจังหวะ สแกนจอ และ ไฟกระพริบ
     process(clk, rst)
@@ -69,7 +77,7 @@ begin
     end process;
 
     -- โพรเซสที่ 2: เลือกว่าจะโชว์ตัวเลขปกติ หรือข้อความ
-    process(scan_idx, msg_sel, digit_0, digit_1, digit_2, cursor_pos, blink_state, index_digit, idx_digit0, idx_digit1, idx_digit2)
+    process(scan_idx, msg_sel, digit_0, digit_1, digit_2, cursor_pos, blink_state, index_digit, idx_digit0, idx_digit1, idx_digit2, raw_digit0, blink_en)
     begin
         hide_digit <= '0';       -- เริ่มต้นให้ไฟติดปกติ
         an <= (others => '1');            -- ปิดจอทุกหลัก (Active Low = 1 คือปิด)
@@ -79,13 +87,13 @@ begin
             case scan_idx is
                 when 0 => -- เปิดหลักหน่วย (ขวาสุด)
                     char_code <= to_integer(unsigned(digit_0)); an <= "11111110"; -- ดึงค่าหลักหน่วยมาโชว์
-                    if cursor_pos = "00" and blink_state = '1' then hide_digit <= '1'; end if; -- ถ้าเคอร์เซอร์อยู่ตรงนี้ ให้กระพริบ
+                    if cursor_pos = "00" and blink_state = '1' and blink_en = '1' then hide_digit <= '1'; end if; -- ถ้าเคอร์เซอร์อยู่ตรงนี้ ให้กระพริบ
                 when 1 => -- เปิดหลักสิบ
                     char_code <= to_integer(unsigned(digit_1)); an <= "11111101";
-                    if cursor_pos = "01" and blink_state = '1' then hide_digit <= '1'; end if;
+                    if cursor_pos = "01" and blink_state = '1' and blink_en = '1' then hide_digit <= '1'; end if;
                 when 2 => -- เปิดหลักร้อย
                     char_code <= to_integer(unsigned(digit_2)); an <= "11111011";
-                    if cursor_pos = "10" and blink_state = '1' then hide_digit <= '1'; end if;
+                    if cursor_pos = "10" and blink_state = '1' and blink_en = '1' then hide_digit <= '1'; end if;
                 when 3 => -- หลักพัน (ไม่ได้ใช้)
                     char_code <= 24; an <= "11110111"; 
                     hide_digit <= '1'; -- สั่งปิดหลักนี้ไปเลย
@@ -159,7 +167,7 @@ begin
                         else char_code <= 13; end if;              -- d
                     end if;
     
-                when "1000" =>             
+                   when "1000" =>             
                     case scan_idx is
                         when 7 => char_code <= 5;          -- S
                         when 6 =>                          -- ร้อย index
@@ -176,19 +184,20 @@ begin
                             end if;
                         when 4 =>                          -- หน่วย index
                             char_code <= idx_digit0;
-                            if cursor_pos = "11" and blink_state = '1' then hide_digit <= '1'; end if;
+                            if cursor_pos = "11" and blink_state = '1' and blink_en = '1' then hide_digit <= '1'; end if;
                         when 3 => hide_digit <= '1';       -- ดับ
                         when 2 =>                          -- ร้อย EV
                             char_code <= to_integer(unsigned(digit_2));
-                            if cursor_pos = "10" and blink_state = '1' then hide_digit <= '1'; end if;
+                            if cursor_pos = "10" and blink_state = '1' and blink_en = '1' then hide_digit <= '1'; end if;
                         when 1 =>                          -- สิบ EV
                             char_code <= to_integer(unsigned(digit_1));
-                            if cursor_pos = "01" and blink_state = '1' then hide_digit <= '1'; end if;
+                            if cursor_pos = "01" and blink_state = '1' and blink_en = '1' then hide_digit <= '1'; end if;
                         when 0 =>                          -- หน่วย EV
                             char_code <= to_integer(unsigned(digit_0));
-                            if cursor_pos = "00" and blink_state = '1' then hide_digit <= '1'; end if;
+                            if cursor_pos = "00" and blink_state = '1' and blink_en = '1' then hide_digit <= '1'; end if;
                         when others => hide_digit <= '1';
                     end case;
+                
                 when "0101" =>   -- โชว์ C ตามด้วย index
                 case scan_idx is
                     when 7 => char_code <= 12;   -- C
@@ -198,9 +207,43 @@ begin
                     when 3 => hide_digit <= '1';
                     when 2 => hide_digit <= '1';
                     when 1 => hide_digit <= '1';
-                    when 0 => char_code <= idx_digit0;  -- 1 หรือ 2
+                    when 0 => char_code <= raw_digit0;  -- 1 หรือ 2
                     when others => hide_digit <= '1';
                 end case;
+                
+                  when "1010" =>   -- แสดงแค่ S[index] ฝั่งซ้าย ไม่มีตัวเลขขวา
+                    case scan_idx is
+                        when 7 => char_code <= 5;          -- S
+                        when 6 =>                          -- ร้อย index
+                            if idx_digit2 = 0 then 
+                                hide_digit <= '1';
+                            else 
+                                char_code <= idx_digit2;
+                            end if;
+                        when 5 =>                          -- สิบ index
+                            if idx_digit2 = 0 and idx_digit1 = 0 then
+                                hide_digit <= '1';
+                            else 
+                                char_code <= idx_digit1;
+                            end if;
+                        when 4 =>                          -- หน่วย index
+                            char_code <= idx_digit0;
+                            if cursor_pos = "11" and blink_state = '1' and blink_en = '1' then 
+                                hide_digit <= '1'; 
+                            end if;
+                        when 3 | 2 | 1 | 0 => hide_digit <= '1';  -- ← ดับหมดฝั่งขวา
+                        when others => hide_digit <= '1';
+                    end case;
+                    
+                    when "1011" =>   -- โหมดโชว์คำว่า PASS
+                    if scan_idx >= 4 then
+                        hide_digit <= '1';
+                    else
+                        if scan_idx=3 then char_code <= 20;      -- P
+                        elsif scan_idx=2 then char_code <= 10;   -- A
+                        elsif scan_idx=1 then char_code <= 5;    -- S
+                        else char_code <= 5; end if;             -- S
+                    end if;
                 
             when others => hide_digit <= '1';
             end case;
