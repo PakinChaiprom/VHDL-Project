@@ -14,6 +14,8 @@ set_property PACKAGE_PIN P17 [get_ports btn_l]
 set_property IOSTANDARD LVCMOS33 [get_ports btn_l]
 set_property PACKAGE_PIN M17 [get_ports btn_r]
 set_property IOSTANDARD LVCMOS33 [get_ports btn_r]
+set_property PACKAGE_PIN C12 [get_ports btn_res]
+set_property IOSTANDARD LVCMOS33 [get_ports btn_res]
 
 ## 7-Segment Display - Cathode (seg)
 set_property PACKAGE_PIN T10 [get_ports {seg[0]}]
