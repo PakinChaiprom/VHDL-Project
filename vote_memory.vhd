@@ -35,8 +35,8 @@ entity vote_memory is
 end vote_memory;
 
 architecture behavioral of vote_memory is
-    constant MAX_VOTERS : integer := 999;
-    constant MAX_STATES : integer := 999;
+    constant MAX_VOTERS : integer := 100;
+    constant MAX_STATES : integer := 50;
 
     type voter_array is array (0 to MAX_STATES-1, 0 to MAX_VOTERS-1) of std_logic;
     signal voter_memory : voter_array := (others => (others => '0'));
