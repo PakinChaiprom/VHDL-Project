@@ -82,12 +82,12 @@ architecture behavioral of state_analyzer is
 
     signal ev_acc_c1 : unsigned(15 downto 0) := (others => '0');
     signal ev_acc_c2 : unsigned(15 downto 0) := (others => '0');
-
     signal pending_ev : unsigned(7 downto 0) := (others => '0');
-
     signal processing : std_logic := '0';
+    signal done_reg   : std_logic := '0';
 
 begin
+done_analysis <= done_reg;
 
 process(clk)
 
@@ -105,9 +105,8 @@ begin
             ev_acc_c1 <= (others => '0');
             ev_acc_c2 <= (others => '0');
             pending_ev <= (others => '0');
-
             processing <= '0';
-            done_analysis <= '0';
+            done_reg <= '0';
 
         ----------------------------------------------------------------
         -- START ANALYSIS
@@ -115,7 +114,7 @@ begin
         elsif start_analysis = '1' and processing = '0' then
 
             processing <= '1';
-            done_analysis <= '0';
+            done_reg <= '0';
 
             ------------------------------------------------------------
             -- CASE 1 : CANDIDATE 1 WINS STATE
@@ -182,17 +181,12 @@ begin
         ----------------------------------------------------------------
         -- FINISH SIGNAL
         ----------------------------------------------------------------
-        elsif start_analysis = '1' and processing = '1' then
-
-            done_analysis <= '1';
-
-        ----------------------------------------------------------------
-        -- IDLE STATE
-        ----------------------------------------------------------------
-        elsif start_analysis = '0' then
-
-            processing <= '0';
-            done_analysis <= '0';
+        elsif processing = '1' and done_reg = '0' then
+            done_reg <= '1';   -- set done ครั้งเดียว
+        
+        elsif processing = '1' and done_reg = '1' and start_analysis = '0' then
+            processing    <= '0';   -- reset เมื่อ FSM รับรู้แล้ว (start หาย)
+            done_reg <= '0';
 
         end if;
 
