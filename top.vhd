@@ -58,13 +58,11 @@ architecture structural of top is
     signal vote_valid_top  : std_logic;
     signal selected_candidate_top : std_logic_vector(1 downto 0);
     signal btn_debounced : std_logic_vector(5 downto 0);
-    type vote_array_t is array(0 to 998) of unsigned(15 downto 0);
+    type vote_array_t is array(0 to 49) of unsigned(15 downto 0);
     signal vote_c1        : vote_array_t := (others => (others => '0'));
     signal vote_c2        : vote_array_t := (others => (others => '0'));
     signal vote_count_top : unsigned(15 downto 0);
-    signal state_sel_int  : integer range 0 to 998;
-    signal pop_vote_c1_top : unsigned(15 downto 0);
-    signal pop_vote_c2_top : unsigned(15 downto 0);
+    signal state_sel_int  : integer range 0 to 49;
     signal start_analysis_top : std_logic;
     signal total_ev_c1_top : unsigned(15 downto 0);
     signal total_ev_c2_top : unsigned(15 downto 0);
@@ -86,7 +84,16 @@ architecture structural of top is
     signal admin_pop_c2       : unsigned(15 downto 0);
     signal admin_login_ok_top : std_logic;
     signal digit_clear_top : std_logic;
-    
+    signal digit_max_d1 : integer range 0 to 9 := 9;
+    signal digit_max_d0 : integer range 0 to 9 := 9;
+    signal digit_allow_d2 : std_logic := '0';
+    signal blink_en_top : std_logic;
+    signal ana_query_index  : integer range 0 to 49;
+    signal ana_pop_c1       : unsigned(15 downto 0);
+    signal ana_pop_c2       : unsigned(15 downto 0);
+    signal ana_ev_value     : unsigned(9 downto 0);
+    signal analysis_active : std_logic;
+           
 begin 
     btn_vec(0) <= btn_r;
     btn_vec(1) <= btn_l;
@@ -95,7 +102,6 @@ begin
     btn_vec(4) <= btn_c;
     btn_vec(5) <= btn_res;
     
-    ev_query_index_top <= to_integer(unsigned(index_digit_top));
     ev_digit0 <= std_logic_vector(
         to_unsigned(to_integer(unsigned(ev_result_top)) mod 10, 4));
     ev_digit1 <= std_logic_vector(
@@ -123,15 +129,44 @@ begin
     pop_query_index_top <= to_integer(unsigned(selected_state_top));
 
     state_sel_int <= to_integer(unsigned(selected_state_top))
-                 when to_integer(unsigned(selected_state_top)) <= 998
-                 else 998;
+                 when to_integer(unsigned(selected_state_top)) <= 49
+                 else 49;
     vote_count_top <= vote_c1(state_sel_int) + vote_c2(state_sel_int);
-    
-    pop_vote_c1_top <= vote_c1(state_sel_int);
-    pop_vote_c2_top <= vote_c2(state_sel_int);
-    
+       
     global_rst <= rst_from_admin;
-        
+   
+    digit_allow_d2 <= '1' when state_out = "00100001"  -- A1
+             else '1' when state_out = "00000011"  -- C3
+             else '0';
+             
+    blink_en_top <= '0' when state_out = "00000101"   -- C5: view EV result
+           else '0' when state_out = "00100010"   -- A2: admin home
+           else '0' when state_out = "00100011"   -- A3: view state results
+           else '0' when state_out = "00100100"   -- A4: view EV total
+           else '0' when state_out = "00100101"   -- A5: declare winner
+           else '0' when state_out = "00100110"   -- A6: reset system
+           else '1';
+     
+    ana_pop_c1   <= vote_c1(ana_query_index);
+    ana_pop_c2   <= vote_c2(ana_query_index);
+    ev_query_index_top <= ana_query_index
+                          when analysis_active = '1'
+                          else to_integer(unsigned(index_digit_top));
+    ana_ev_value <= unsigned(ev_result_top);
+     
+    process(clk100MHZ, global_rst)
+    begin
+        if global_rst = '1' then
+            analysis_active <= '0';
+        elsif rising_edge(clk100MHZ) then
+            if start_analysis_top = '1' then
+                analysis_active <= '1';
+            elsif done_analysis_top = '1' then
+                analysis_active <= '0';
+            end if;
+        end if;
+    end process;
+    
     -- 2D array
     process(clk100MHZ, global_rst)
     begin
@@ -153,6 +188,29 @@ begin
         end if;
     end process;
 
+    process(state_out, digit1, digit2)
+    begin
+        if state_out = "00000001" then  -- C1
+            digit_max_d1 <= 5;
+            if to_integer(unsigned(digit1)) >= 5 then
+                digit_max_d0 <= 0;  -- d1=5 → d0 ได้แค่ 0
+            else
+                digit_max_d0 <= 9;  -- d1<5 → d0 ได้ 0-9
+            end if;
+         elsif state_out = "00000011" then  -- C3: max population=100
+            digit_max_d1 <= 9;
+            digit_max_d0 <= 9;
+            -- ถ้า d2=1 จำกัด d1 ให้ได้แค่ 0 และ d0 ให้ได้แค่ 0
+            if to_integer(unsigned(digit2)) >= 1 then
+                digit_max_d1 <= 0;  -- d2=1 → d1 ได้แค่ 0
+                digit_max_d0 <= 0;  -- d2=1,d1=0 → d0 ได้แค่ 0
+            end if;
+        else
+            digit_max_d1 <= 9;
+            digit_max_d0 <= 9;
+        end if;
+    end process;
+    
     main : entity work.main_fsm
     generic map(CLK_FREQ => CLK_FREQ)
     port map(
@@ -208,7 +266,10 @@ begin
 
         confirmed => confirmed,
         clear => digit_clear_top,
-        error => error
+        error => error,
+        allow_d2 => digit_allow_d2,
+        max_d1 => digit_max_d1,
+        max_d0 => digit_max_d0
     );
     
     seven_seg : entity work.sevenseg_driver
@@ -227,7 +288,8 @@ begin
         msg_sel => msg_sel_final,
 
         seg => seg,
-        an => an
+        an => an,
+        blink_en => blink_en_top
    );
    
    ev_allocator : entity work.ev_allocator
@@ -272,11 +334,13 @@ begin
         clk             => clk100MHZ,
         rst             => global_rst,
         start_analysis  => start_analysis_top,
-        pop_vote_c1     => pop_vote_c1_top,
-        pop_vote_c2     => pop_vote_c2_top,
+        state_count     => unsigned(state_count_top),   
+        query_index     => ana_query_index,              
+        pop_c1_in       => ana_pop_c1,                 
+        pop_c2_in       => ana_pop_c2,               
+        ev_value_in     => ana_ev_value,               
         national_pop_c1 => national_pop_c1_top,
         national_pop_c2 => national_pop_c2_top,
-        state_ev_value  => unsigned(ev_result_top),
         total_ev_c1     => total_ev_c1_top,
         total_ev_c2     => total_ev_c2_top,
         pending_ev_pool => pending_ev_top,
