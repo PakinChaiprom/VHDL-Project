@@ -147,7 +147,7 @@ architecture behavioral of admin_controller is
     -- view_index : current browse position in A3 (states) or A4 (candidates)
     -- Resets to 0 whenever FSM enters a new stage
     ----------------------------------------------------------------
-    signal view_index   : integer range 0 to 998 := 0;
+    signal view_index   : integer range 0 to 49 := 0;
 
     ----------------------------------------------------------------
     -- A6 RESET CONFIRMATION FLAG
@@ -169,9 +169,12 @@ architecture behavioral of admin_controller is
     ----------------------------------------------------------------
     signal prev_state   : std_logic_vector(7 downto 0) := (others => '0');
     signal a3_show_c2 : std_logic := '0';
+    signal a3_live_val : unsigned(15 downto 0);
 
 begin
     pop_query_index <= view_index;
+    a3_live_val <= pop_c1_result when a3_show_c2 = '0'
+               else pop_c2_result;
     
     process(clk, rst)
 
@@ -293,14 +296,7 @@ begin
                         a3_show_c2 <= '0';
                     elsif btn_down = '1' then
                         a3_show_c2 <= '1';
-                    end if;
-                    
-                    if a3_show_c2 = '0' then
-                        display_val <= pop_c1_result;
-                    else
-                        display_val <= pop_c2_result;
-                    end if;
-                
+                    end if;                                               
                     if btn_right = '1' then
                         if view_index < to_integer(state_count) - 1 then
                             view_index <= view_index + 1;
@@ -450,11 +446,22 @@ begin
     -- disp_digit_2 : hundreds → sevenseg_driver digit_2
     -- Max displayable range: 0-999
     ----------------------------------------------------------------
-    disp_digit_0 <= std_logic_vector(
-                        to_unsigned(to_integer(display_val) mod 10, 4));
-    disp_digit_1 <= std_logic_vector(
-                        to_unsigned((to_integer(display_val) / 10) mod 10, 4));
-    disp_digit_2 <= std_logic_vector(
-                        to_unsigned((to_integer(display_val) / 100) mod 10, 4));
+    disp_digit_0 <= std_logic_vector(to_unsigned(
+                    to_integer(a3_live_val) mod 10, 4))
+                    when state_in = "00100011"
+                    else std_logic_vector(to_unsigned(
+                        to_integer(display_val) mod 10, 4));
+
+    disp_digit_1 <= std_logic_vector(to_unsigned(
+                        (to_integer(a3_live_val) / 10) mod 10, 4))
+                    when state_in = "00100011"
+                    else std_logic_vector(to_unsigned(
+                        (to_integer(display_val) / 10) mod 10, 4));
+    
+    disp_digit_2 <= std_logic_vector(to_unsigned(
+                        (to_integer(a3_live_val) / 100) mod 10, 4))
+                    when state_in = "00100011"
+                    else std_logic_vector(to_unsigned(
+                        (to_integer(display_val) / 100) mod 10, 4));
 
 end behavioral;
