@@ -25,182 +25,119 @@ library IEEE;
 use IEEE.STD_LOGIC_1164.ALL;
 use IEEE.NUMERIC_STD.ALL;
 
+-- state_analyzer.vhd (แก้ใหม่ทั้งหมด)
 entity state_analyzer is
     Port (
+        clk             : in  std_logic;
+        rst             : in  std_logic;
+        start_analysis  : in  std_logic;
 
-        ----------------------------------------------------------------
-        -- CLOCK & RESET
-        ----------------------------------------------------------------
-        clk             : in std_logic;
-        rst             : in std_logic;
+        -- ใหม่: รับ state_count เพื่อรู้ว่าต้องวนกี่รอบ
+        state_count     : in  unsigned(9 downto 0);
 
-        ----------------------------------------------------------------
-        -- CONTROL SIGNAL
-        ----------------------------------------------------------------
-        start_analysis  : in std_logic;
+        -- ใหม่: query interface ดึงข้อมูลทีละ state
+        query_index     : out integer range 0 to 49;   -- บอก top.vhd ว่าต้องการ state ไหน
+        pop_c1_in       : in  unsigned(15 downto 0);   -- top.vhd ส่ง vote_c1(query_index) มา
+        pop_c2_in       : in  unsigned(15 downto 0);
+        ev_value_in     : in  unsigned(9 downto 0);    -- top.vhd ส่ง ev_result(query_index) มา
 
-        ----------------------------------------------------------------
-        -- POPULAR VOTE (CURRENT STATE)
-        ----------------------------------------------------------------
-        pop_vote_c1     : in unsigned(15 downto 0);
-        pop_vote_c2     : in unsigned(15 downto 0);
+        national_pop_c1 : in  unsigned(31 downto 0);
+        national_pop_c2 : in  unsigned(31 downto 0);
 
-        ----------------------------------------------------------------
-        -- NATIONAL POPULAR VOTE (ALL STATES COMBINED)
-        ----------------------------------------------------------------
-        national_pop_c1 : in unsigned(31 downto 0);
-        national_pop_c2 : in unsigned(31 downto 0);
-
-        ----------------------------------------------------------------
-        -- ELECTORAL VOTES OF CURRENT STATE
-        ----------------------------------------------------------------
-        state_ev_value  : in unsigned(9 downto 0);
-
-        ----------------------------------------------------------------
-        -- OUTPUT: TOTAL ELECTORAL VOTES
-        ----------------------------------------------------------------
         total_ev_c1     : out unsigned(15 downto 0);
         total_ev_c2     : out unsigned(15 downto 0);
-
-        ----------------------------------------------------------------
-        -- OUTPUT: PENDING EV POOL
-        ----------------------------------------------------------------
         pending_ev_pool : out unsigned(7 downto 0);
-
-        ----------------------------------------------------------------
-        -- OUTPUT: DONE FLAG
-        ----------------------------------------------------------------
         done_analysis   : out std_logic
     );
 end state_analyzer;
 
 architecture behavioral of state_analyzer is
 
-    ----------------------------------------------------------------
-    -- INTERNAL REGISTERS
-    ----------------------------------------------------------------
-
+    type fsm_t is (IDLE, PROCESS_STATE, NEXT_STATE, DONE_ST);
+    signal state     : fsm_t := IDLE;
+    signal cur_idx   : integer range 0 to 49 := 0;
     signal ev_acc_c1 : unsigned(15 downto 0) := (others => '0');
     signal ev_acc_c2 : unsigned(15 downto 0) := (others => '0');
     signal pending_ev : unsigned(7 downto 0) := (others => '0');
-    signal processing : std_logic := '0';
-    signal done_reg   : std_logic := '0';
 
 begin
-done_analysis <= done_reg;
+    query_index     <= cur_idx;
+    total_ev_c1     <= ev_acc_c1;
+    total_ev_c2     <= ev_acc_c2;
+    pending_ev_pool <= pending_ev;
 
-process(clk)
+    process(clk)
+        variable half_ev : unsigned(9 downto 0);
+    begin
+        if rising_edge(clk) then
+            if rst = '1' then
+                state      <= IDLE;
+                cur_idx    <= 0;
+                ev_acc_c1  <= (others => '0');
+                ev_acc_c2  <= (others => '0');
+                pending_ev <= (others => '0');
+                done_analysis <= '0';
 
-    variable half_ev : unsigned(9 downto 0);
-
-begin
-
-    if rising_edge(clk) then
-
-        ----------------------------------------------------------------
-        -- RESET SYSTEM
-        ----------------------------------------------------------------
-        if rst = '1' then
-
-            ev_acc_c1 <= (others => '0');
-            ev_acc_c2 <= (others => '0');
-            pending_ev <= (others => '0');
-            processing <= '0';
-            done_reg <= '0';
-
-        ----------------------------------------------------------------
-        -- START ANALYSIS
-        ----------------------------------------------------------------
-        elsif start_analysis = '1' and processing = '0' then
-
-            processing <= '1';
-            done_reg <= '0';
-
-            ------------------------------------------------------------
-            -- CASE 1 : CANDIDATE 1 WINS STATE
-            ------------------------------------------------------------
-            if pop_vote_c1 > pop_vote_c2 then
-
-                ev_acc_c1 <= ev_acc_c1 + state_ev_value;
-
-            ------------------------------------------------------------
-            -- CASE 2 : CANDIDATE 2 WINS STATE
-            ------------------------------------------------------------
-            elsif pop_vote_c2 > pop_vote_c1 then
-
-                ev_acc_c2 <= ev_acc_c2 + state_ev_value;
-
-            ------------------------------------------------------------
-            -- CASE 3 : POPULAR VOTE TIE
-            ------------------------------------------------------------
             else
+                case state is
 
-                half_ev := state_ev_value / 2;
+                    when IDLE =>
+                        done_analysis <= '0';
+                        if start_analysis = '1' then
+                            cur_idx   <= 0;
+                            ev_acc_c1 <= (others => '0');
+                            ev_acc_c2 <= (others => '0');
+                            pending_ev <= (others => '0');
+                            state     <= PROCESS_STATE;
+                        end if;
 
-                --------------------------------------------------------
-                -- EVEN EV CASE
-                --------------------------------------------------------
-                if (state_ev_value mod 2 = 0) then
+                    when PROCESS_STATE =>
+                        -- รอ 1 cycle ให้ top.vhd ส่งข้อมูลของ cur_idx มาถึง
+                        state <= NEXT_STATE;
 
-                    ev_acc_c1 <= ev_acc_c1 + half_ev;
-                    ev_acc_c2 <= ev_acc_c2 + half_ev;
+                    when NEXT_STATE =>
+                        -- ตอนนี้ pop_c1_in / pop_c2_in / ev_value_in
+                        -- มีค่าของ state cur_idx แล้ว
+                        half_ev := ev_value_in / 2;
 
-                --------------------------------------------------------
-                -- ODD EV CASE
-                --------------------------------------------------------
-                else
+                        if pop_c1_in > pop_c2_in then
+                            ev_acc_c1 <= ev_acc_c1 + ev_value_in;
 
-                    
+                        elsif pop_c2_in > pop_c1_in then
+                            ev_acc_c2 <= ev_acc_c2 + ev_value_in;
 
-                    ----------------------------------------------------
-                    -- CHECK NATIONAL POPULAR VOTE
-                    ----------------------------------------------------
-                    if national_pop_c1 > national_pop_c2 then
+                        else  -- tie
+                            if ev_value_in mod 2 = 0 then
+                                ev_acc_c1 <= ev_acc_c1 + half_ev;
+                                ev_acc_c2 <= ev_acc_c2 + half_ev;
+                            else
+                                if national_pop_c1 > national_pop_c2 then
+                                    ev_acc_c1 <= ev_acc_c1 + half_ev + 1;
+                                    ev_acc_c2 <= ev_acc_c2 + half_ev;
+                                elsif national_pop_c2 > national_pop_c1 then
+                                    ev_acc_c2 <= ev_acc_c2 + half_ev + 1;
+                                    ev_acc_c1 <= ev_acc_c1 + half_ev;
+                                else
+                                    ev_acc_c1 <= ev_acc_c1 + half_ev;
+                                    ev_acc_c2 <= ev_acc_c2 + half_ev;
+                                    pending_ev <= pending_ev + 1;
+                                end if;
+                            end if;
+                        end if;
 
-                        ev_acc_c1 <= ev_acc_c1 + half_ev + 1; -- half + remain 1
-                        ev_acc_c2 <= ev_acc_c2 + half_ev;
+                        -- ไป state ถัดไป หรือจบ
+                        if cur_idx + 1 < to_integer(state_count) then
+                            cur_idx <= cur_idx + 1;
+                            state   <= PROCESS_STATE;
+                        else
+                            state <= DONE_ST;
+                        end if;
 
-                    elsif national_pop_c2 > national_pop_c1 then
-
-                        ev_acc_c2 <= ev_acc_c2 + half_ev + 1;
-                        ev_acc_c1 <= ev_acc_c1 + half_ev; -- half + remain 1
-
-                    ----------------------------------------------------
-                    -- NATIONAL POP TIE → STORE IN PENDING POOL
-                    ----------------------------------------------------
-                    else
-
-                        pending_ev <= pending_ev + 1;
-
-                    end if;
-
-                end if;
-
+                    when DONE_ST =>
+                        done_analysis <= '1';
+                        state <= IDLE;                       
+                end case;
             end if;
-
-        ----------------------------------------------------------------
-        -- FINISH SIGNAL
-        ----------------------------------------------------------------
-        elsif processing = '1' and done_reg = '0' then
-            done_reg <= '1';   -- set done ครั้งเดียว
-        
-        elsif processing = '1' and done_reg = '1' and start_analysis = '0' then
-            processing    <= '0';   -- reset เมื่อ FSM รับรู้แล้ว (start หาย)
-            done_reg <= '0';
-
         end if;
-
-    end if;
-
-end process;
-
-----------------------------------------------------------------
--- OUTPUT ASSIGNMENT
-----------------------------------------------------------------
-
-total_ev_c1 <= ev_acc_c1;
-total_ev_c2 <= ev_acc_c2;
-
-pending_ev_pool <= pending_ev;
-
+    end process;
 end behavioral;
