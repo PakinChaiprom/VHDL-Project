@@ -14,7 +14,10 @@ entity digit_input is
         cursor_pos : out STD_LOGIC_VECTOR(1 downto 0); 
         confirmed  : out STD_LOGIC;    
         error      : out STD_LOGIC;       
-        clear      : in  std_logic                            
+        clear      : in  std_logic;
+        max_d1 : in integer range 0 to 9 := 9;  
+        max_d0 : in integer range 0 to 9 := 9;
+        allow_d2 : in std_logic := '0'                           
     );
 end digit_input;
 
@@ -57,18 +60,48 @@ begin
         
                 if btn_pulse(3) = '1' then
                     case cursor is
-                        when 0 => if d0 < 9 then d0 <= d0 + 1; else d0 <= 0; end if; 
-                        when 1 => if d1 < 9 then d1 <= d1 + 1; else d1 <= 0; end if;
-                        when 2 => if d2 < 9 then d2 <= d2 + 1; else d2 <= 0; end if;
+                        when 1 =>
+                            if d1 < max_d1 then
+                                d1 <= d1 + 1;
+                            else
+                                d1 <= 0;
+                            end if;
+                            -- clamp d0 ถ้า d1 ใหม่ = max_d1
+                            if d1 + 1 = max_d1 and d0 > max_d0 then
+                                d0 <= max_d0;  -- ← clamp d0 ทันที
+                            end if;
+                        when 0 =>
+                            if d0 < max_d0 then d0 <= d0 + 1;
+                            else d0 <= 0; end if;                     
+                        when 2 => 
+                            if allow_d2 = '1' then  -- ← เพิ่ม condition
+                                if d2 < 1 then d2 <= d2 + 1;
+                                else d2 <= 0; end if;
+                            end if;
                         when others => null;
                     end case;
                 end if;
         
                 if btn_pulse(2) = '1' then
                     case cursor is
-                        when 0 => if d0 > 0 then d0 <= d0 - 1; else d0 <= 9; end if; 
-                        when 1 => if d1 > 0 then d1 <= d1 - 1; else d1 <= 9; end if;
-                        when 2 => if d2 > 0 then d2 <= d2 - 1; else d2 <= 9; end if;
+                        when 1 =>
+                            if d1 > 0 then
+                                d1 <= d1 - 1;
+                            else
+                                d1 <= max_d1;
+                                -- clamp d0 ถ้า wrap ไปที่ max_d1
+                                if d0 > max_d0 then
+                                    d0 <= max_d0;
+                                end if;
+                            end if;
+                        when 0 =>
+                            if d0 > 0 then d0 <= d0 - 1;
+                            else d0 <= max_d0; end if;                    
+                        when 2 => 
+                             if allow_d2 = '1' then  -- ← เพิ่ม condition
+                                if d2 > 0 then d2 <= d2 - 1;
+                                else d2 <= 1; end if;
+                            end if;
                         when others => null;
                     end case;
                 end if;
