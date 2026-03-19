@@ -126,7 +126,7 @@ architecture behavioral of admin_controller is
     ----------------------------------------------------------------
     -- CONSTANTS
     ----------------------------------------------------------------
-    constant ADMIN_PASSWORD : unsigned(9 downto 0) := to_unsigned(123, 10);
+    constant ADMIN_PASSWORD : unsigned(9 downto 0) := to_unsigned(000, 10);
     constant LOCK_MAX       : integer := CLK_FREQ * 10;  -- 10 seconds
     constant ERROR_MAX      : integer := CLK_FREQ;       -- 1 second
 
