@@ -7,8 +7,8 @@ entity button_controller is
     Port ( 
         clk     : in  STD_LOGIC;                    -- ขารับสัญญาณนาฬิกา
         rst     : in  STD_LOGIC;                    -- ขารับปุ่ม Reset
-        btn_in  : in  STD_LOGIC_VECTOR(4 downto 0); -- ขารับสัญญาณปุ่มกด 5 ปุ่ม (ดิบๆ)
-        btn_out : out STD_LOGIC_VECTOR(4 downto 0)  -- ขาส่งสัญญาณปุ่มที่กรองแล้วออกไป
+        btn_in  : in  STD_LOGIC_VECTOR(5 downto 0); -- ขารับสัญญาณปุ่มกด 5 ปุ่ม (ดิบๆ)
+        btn_out : out STD_LOGIC_VECTOR(5 downto 0)  -- ขาส่งสัญญาณปุ่มที่กรองแล้วออกไป
     );
 end button_controller;
 
@@ -18,9 +18,9 @@ architecture Behavioral of button_controller is
     signal counter : integer range 0 to DEBOUNCE_MAX := 0; -- ตัวนับเวลา
     
     -- ชุดตัวแปร D Flip-flop สำหรับพักข้อมูล ป้องกันจังหวะสัญญาณชนกัน (Metastability)
-    signal btn_sync1, btn_sync2 : STD_LOGIC_VECTOR(4 downto 0) := (others => '0');
-    signal btn_state : STD_LOGIC_VECTOR(4 downto 0) := (others => '0'); -- สถานะปุ่มปัจจุบันที่นิ่งแล้ว
-    signal btn_prev  : STD_LOGIC_VECTOR(4 downto 0) := (others => '0'); -- สถานะปุ่มในอดีต (เสี้ยววิที่แล้ว)
+    signal btn_sync1, btn_sync2 : STD_LOGIC_VECTOR(5 downto 0) := (others => '0');
+    signal btn_state : STD_LOGIC_VECTOR(5 downto 0) := (others => '0'); -- สถานะปุ่มปัจจุบันที่นิ่งแล้ว
+    signal btn_prev  : STD_LOGIC_VECTOR(5 downto 0) := (others => '0'); -- สถานะปุ่มในอดีต (เสี้ยววิที่แล้ว)
 begin
     process(clk, rst) -- เริ่มการทำงานทุกครั้งที่ Clock ขยับ หรือโดน Reset
     begin
@@ -50,7 +50,7 @@ begin
             
             -- 3. Edge Detection: ปล่อยสัญญาณพัลส์แค่ 1 Clock
             btn_prev <= btn_state;                -- เอาสถานะปัจจุบันไปเก็บเป็น "อดีต"
-            for i in 0 to 4 loop                  -- ไล่เช็คทีละปุ่มตั้งแต่ 0 ถึง 4
+            for i in 0 to 5 loop                  -- ไล่เช็คทีละปุ่มตั้งแต่ 0 ถึง 5
                 if btn_state(i) = '1' and btn_prev(i) = '0' then -- ถ้าปัจจุบันกด(1) แต่อดีตปล่อย(0)
                     btn_out(i) <= '1';            -- ส่งสัญญาณ "เพิ่งกด" ออกไป
                 else
